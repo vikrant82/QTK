@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] — 2026-05-26
 
-Initial public release on [github.com/fivelidz/QTK](https://github.com/fivelidz/QTK).
+Initial public release on [github.com/qalarc/QTK](https://github.com/qalarc/QTK).
 
 ### Phase 1 — Built-in TypeScript compressors
 
@@ -123,5 +123,5 @@ If you're not on opencode specifically, [use RTK](https://rtk-ai.app).
 
 ---
 
-[Unreleased]: https://github.com/fivelidz/QTK/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/fivelidz/QTK/releases/tag/v0.3.0
+[Unreleased]: https://github.com/qalarc/QTK/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/qalarc/QTK/releases/tag/v0.3.0

@@ -21,7 +21,7 @@ I built a small opencode-specific spiritual sibling of RTK called QTK
 ("Qalarc Token Killer") and wanted to give you a heads-up rather than
 have it surface elsewhere and look like a fork situation.
 
-**TL;DR:** [github.com/fivelidz/QTK](https://github.com/fivelidz/QTK). MIT
+**TL;DR:** [github.com/qalarc/QTK](https://github.com/qalarc/QTK). MIT
 licensed. opencode plugin only. The whole project is downstream of RTK
 — RTK is the canonical work, RTK ships the 100+ filter corpus, RTK
 serves 13 different AI coding agents. QTK is what you do if you

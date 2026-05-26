@@ -72,7 +72,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
                   $12.55/month · $152.69/year at current rate
 ```
 
-[![CI](https://github.com/fivelidz/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/fivelidz/QTK/actions/workflows/ci.yml)
+[![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![tests](https://img.shields.io/badge/tests-134%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -237,7 +237,7 @@ NDJSON protocol over stdin/stdout (one JSON object per line). Long-lived subproc
 
 ```bash
 # 1. Clone + build
-git clone https://github.com/fivelidz/QTK
+git clone https://github.com/qalarc/QTK
 cd QTK && bun install && bun run build
 
 # 2. (Optional) Build the Rust sidecar

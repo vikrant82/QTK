@@ -145,5 +145,5 @@ jobs:
             binary works on your platform. (It will print the hello JSON line
             and exit on stdin EOF.)
 
-            See [CHANGELOG.md](https://github.com/fivelidz/QTK/blob/main/CHANGELOG.md)
+            See [CHANGELOG.md](https://github.com/qalarc/QTK/blob/main/CHANGELOG.md)
             for what's in this release.

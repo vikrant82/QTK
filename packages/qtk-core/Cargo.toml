@@ -5,7 +5,7 @@ edition = "2021"
 description = "Heavy parsers sidecar for QTK — JSON-RPC over stdin/stdout"
 license = "MIT"
 authors = ["fivelidz"]
-repository = "https://github.com/fivelidz/QTK"
+repository = "https://github.com/qalarc/QTK"
 readme = "README.md"
 publish = false
 

@@ -262,7 +262,7 @@ If you find a security issue in QTK, please **do not** open a public GitHub
 issue. Instead, email the maintainer at the address listed on the GitHub
 profile (`@fivelidz`) or open a private security advisory at:
 
-  https://github.com/fivelidz/QTK/security/advisories/new
+  https://github.com/qalarc/QTK/security/advisories/new
 
 Please include:
 

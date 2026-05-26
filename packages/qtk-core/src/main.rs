@@ -45,7 +45,7 @@ PROTOCOL (NDJSON, one JSON line per request and response):
 On startup, emits one unsolicited line:
     {"kind":"hello", "version":"<v>", "compressors":[...]}
 
-For full documentation see https://github.com/fivelidz/QTK
+For full documentation see https://github.com/qalarc/QTK
 "#;
 
 fn main() {

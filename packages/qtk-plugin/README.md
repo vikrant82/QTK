@@ -7,7 +7,7 @@ This is the npm-publishable package containing the TypeScript opencode
 plugin. The full project (including the Rust sidecar `qtk-core`, the
 RTK filter import script, and all docs) lives at:
 
-  **https://github.com/fivelidz/QTK**
+  **https://github.com/qalarc/QTK**
 
 If you're not using opencode specifically, you almost certainly want
 [RTK](https://github.com/rtk-ai/rtk) instead — RTK supports 13 AI
@@ -52,10 +52,10 @@ compressors silently.
 
 ## Docs
 
-- **Full README**: https://github.com/fivelidz/QTK
-- **Filter DSL reference**: https://github.com/fivelidz/QTK/blob/main/docs/FILTER-DSL.md
-- **Integration guide**: https://github.com/fivelidz/QTK/blob/main/docs/INTEGRATION.md
-- **vs RTK comparison**: https://github.com/fivelidz/QTK/blob/main/docs/RTK-COMPARISON.md
+- **Full README**: https://github.com/qalarc/QTK
+- **Filter DSL reference**: https://github.com/qalarc/QTK/blob/main/docs/FILTER-DSL.md
+- **Integration guide**: https://github.com/qalarc/QTK/blob/main/docs/INTEGRATION.md
+- **vs RTK comparison**: https://github.com/qalarc/QTK/blob/main/docs/RTK-COMPARISON.md
 
 ## License
 

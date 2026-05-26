@@ -16,7 +16,7 @@ Please do **not** open a public GitHub issue.
 
 Use the private security advisory channel:
 
-  https://github.com/fivelidz/QTK/security/advisories/new
+  https://github.com/qalarc/QTK/security/advisories/new
 
 Or email the maintainer at the address on the [@fivelidz](https://github.com/fivelidz)
 GitHub profile.

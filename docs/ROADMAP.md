@@ -5,16 +5,23 @@
 
 **Status snapshot (2026-05-26):**
 
-| Phase | Description                                  | Status        |
-| ----- | -------------------------------------------- | ------------- |
-| 0     | Repo bootstrap                               | ✅ done       |
-| 1     | TS-only MVP plugin (9 compressors)           | ✅ done       |
-| 2     | TOML filter DSL + RTK import                 | ✅ done       |
-| 3     | Rust sidecar (`qtk-core`) for heavy parsers  | ✅ done       |
-| —     | Public release (GitHub + qalarc.com + blog)  | 🟡 in flight |
-| 4     | gmux/tauri dashboard widget                  | ⬜ planned    |
-| 5     | Smart compaction integration                 | ⬜ planned    |
-| 6     | Cross-agent extraction (maybe)               | ⬜ maybe      |
+| Phase | Description                                                          | Status        |
+| ----- | -------------------------------------------------------------------- | ------------- |
+| 0     | Repo bootstrap                                                       | ✅ done       |
+| 1     | TS-only MVP plugin (9 compressors)                                   | ✅ done       |
+| 2     | TOML filter DSL + RTK filter corpus bulk-imported (59/59)            | ✅ done       |
+| 3     | Rust sidecar (`qtk-core`) for heavy parsers                          | ✅ done       |
+| —     | Public release (github.com/qalarc/QTK + qalarc.com + blog)           | ✅ done       |
+| —     | CI + release pipeline + community files + npm scaffolding            | ✅ done       |
+| —     | Cost-aware analytics + gmux integration (3 surfaces)                 | ✅ done       |
+| 4a    | gmux data plumbing (status bar + phone + Tauri perf strip)           | ✅ done       |
+| 4b    | Tauri drill-down inspector modal + real-time push + history view     | ⬜ planned    |
+| 5a    | Smart compaction integration — ship to qalcode2 first                | ⬜ planned    |
+| 5b    | Smart compaction integration — upstream PR to sst/opencode           | ⬜ planned    |
+| 6     | Cross-agent extraction (probably never; that's RTK's territory)      | ⬜ maybe      |
+| —     | npm publish under @qalarc scope                                      | 🟡 queued    |
+| —     | RTK community outreach (draft in docs/RTK-OUTREACH-DRAFT.md)         | 🟡 queued    |
+| —     | v0.3.1 tag to exercise the release pipeline                          | 🟡 queued    |
 
 ---
 
@@ -155,12 +162,19 @@ Before any code-level Phase 4 work, surface the project publicly.
 
 ### Deliverables
 
-- [ ] Sanitize repo of personal/private references (done — see `PUBLIC.md`)
-- [ ] Push to `github.com/fivelidz/QTK` (or chosen handle), MIT-licensed
-- [ ] Add project card to `qalarc.com/projects/` (projects.json entry)
-- [ ] Write a layman + technical blog post pair for qalarc-blog
-- [ ] Tag a `v0.3.0` release matching the Phase 3 cutpoint
-- [ ] (Optional) Publish `@qtk/plugin` to npm
+- [x] Sanitize repo of personal/private references
+- [x] Push to `github.com/qalarc/QTK` (org transferred from fivelidz/QTK on 2026-05-26)
+- [x] Add project card to `qalarc.com/projects/` (projects.json entry, featured)
+- [x] Write a layman + technical blog post pair for qalarc-blog
+- [x] Tag a `v0.3.0` release matching the Phase 3 cutpoint
+- [x] GitHub Actions CI (3 jobs: TS, Rust, integration) all passing
+- [x] GitHub Actions release pipeline cross-builds x86_64/aarch64 linux/macos
+- [x] Bulk-import all 59 RTK filters
+- [x] Community files (issue/PR templates, FUNDING.yml, SECURITY.md, CHANGELOG.md)
+- [x] npm-publishable scaffolding (npm pack --dry-run = 70KB tarball)
+- [ ] Actually `npm publish` once npmjs.com `@qalarc` scope is registered
+- [ ] Tag `v0.3.1` to verify release pipeline produces prebuilt binaries
+- [ ] Post the RTK community outreach note (draft in `docs/RTK-OUTREACH-DRAFT.md`)
 
 ### Acceptance criteria
 
@@ -176,48 +190,95 @@ Before any code-level Phase 4 work, surface the project publicly.
 
 ---
 
-## Phase 4 — gmux/tauri dashboard widget (⬜ planned, target: 3 days)
+## Phase 4 — gmux/Tauri dashboard widget (🟡 partial)
 
 A live UI showing what QTK is doing.
 
-### Deliverables
+### What's already shipped (data plumbing)
 
-- [ ] `packages/qtk-dashboard/` — UI components (SolidJS, matching opencode's
-      `packages/desktop` stack)
-- [ ] Tauri-side IPC: QTK plugin emits events on each compression;
-      dashboard subscribes via SSE or Tauri event
-- [ ] Per-pane status bar widget: `tokens saved: 47K (-78%)`
-- [ ] Drill-down inspector modal:
-  - List of recent compressions with raw/compact side-by-side
-  - "View tee fallback" button → opens the saved raw log
-  - Filter by tool, command, ratio
-- [ ] Aggregate view: per-project totals, top compressors, savings over time
+- ✅ QTK writes `<project>/.opencode/qtk-savings.json` every 10s (debounced,
+  atomic, mode 0o644) — `packages/qtk-plugin/src/savings-export.ts`
+- ✅ Pricing module covers Claude, GPT, Grok, DeepSeek, Gemini, local models
+  — `packages/qtk-plugin/src/pricing.ts`
+- ✅ gmux tmux status bar: `format_qtk_widget()` in
+  `gmux/src/status/pane_status.py` renders `⊟ 855.7k $2.57`, deduped by port
+- ✅ gmux phone PWA: per-agent card shows `⊟ QTK saved 217k tok · $0.65 (283 calls)`
+- ✅ gmuxtest Tauri UI: perf strip cell + per-pane HW row + pane footer badge
+- ✅ `qtk gain --model=<id>` CLI emits USD-saved columns + daily/monthly/yearly
+  extrapolation
+
+### What's left for "full Phase 4"
+
+- [ ] **Drill-down inspector modal** (gmuxtest Tauri UI): click a pane's
+      QTK badge → modal showing the last N compressions for that pane with
+      raw/compressed side-by-side diff. Data already exists via the tee
+      files at `.opencode/qtk-tee/<call-id>.log`.
+- [ ] **Real-time push from plugin** (vs polling JSON): currently gmux polls
+      the sidecar file every 5s. Better: the QTK plugin emits an SSE event
+      or writes to a Unix socket that gmux/Tauri subscribes to. This drops
+      the 5s render lag to ~30ms but adds complexity.
+- [ ] **Per-project + per-session history view**: cumulative tokens-saved
+      sparkline chart, "top 10 most-compressed commands this session"
+      table, model-cost breakdown by provider.
+- [ ] **"What got compressed?" filter UI**: search/sort the
+      `qtk-stats.sqlite` rows from inside the dashboard.
 
 ### Acceptance criteria
 
 - Widget renders in real-time as the agent runs (< 500 ms after each call)
 - No measurable impact on agent latency from event emission
-- Works in both `packages/tauri` (existing) and gmux's planned Tauri app
-  (when it ships)
+- Works in both `gmux` (current target) and a future standalone QTK
+  desktop app if built
 
 ---
 
 ## Phase 5 — Smart compaction integration (⬜ planned, target: 3 days)
 
+Two parts: an upstream PR to opencode and a parallel patch to qalcode2
+(our private opencode fork). Both end-states are: when the rolling-window
+pruner kicks in, dropped tool outputs become summaries rather than `null`s.
+
 Replace opencode's "[output pruned]" with "[summarised: 4 prior git status
 calls, no changes since 14:18]" when the rolling-window pruner kicks in.
 
-### Deliverables
+### Deliverables — upstream opencode (sst/opencode)
 
-- [ ] Patch to `packages/opencode/src/session/compaction.ts` (PR upstream)
-- [ ] qtk-plugin exposes a `summariseOldOutput(toolCalls)` function that
-      compaction calls
+- [ ] **Issue first**: open `sst/opencode` issue describing the
+      "compaction summarises rather than nulls" idea, get maintainer
+      signal before writing the patch. Reference QTK's existing
+      `qtk-stats.sqlite` as the data source the summariser would use.
+- [ ] Patch to `packages/opencode/src/session/compaction.ts`
+- [ ] Define a stable `Plugin.summariseOldOutput?(toolCalls)` hook in
+      `@opencode-ai/plugin` so QTK (and any other plugin) can provide
+      summaries
+- [ ] qtk-plugin exposes a `summariseOldOutput(toolCalls)` function
+      that compaction calls
 - [ ] One LLM call per compaction event to generate the human-readable
       summary (we accept the small token cost in exchange for retaining
       meaningful context)
 - [ ] Configurable: which compaction strategy to use — "null" (existing),
       "summarise" (LLM), or "deterministic-summarise" (template-based,
       no LLM)
+- [ ] Tests + a `qtk` opt-in flag so users on stock opencode can try the
+      feature without QTK being installed
+
+### Deliverables — qalcode2 (our private opencode fork)
+
+We ship to qalcode2 first as a proof of concept, then upstream to
+opencode once we know it works. This decouples the QTK roadmap from
+sst/opencode review velocity.
+
+- [ ] Cherry-pick the compaction.ts patch into qalcode2's
+      `packages/opencode/src/session/compaction.ts`
+- [ ] Wire the new `Plugin.summariseOldOutput?` hook into qalcode2's
+      plugin loader (independent of upstream until merged)
+- [ ] Test in a real 4-hour qalcode2 session, capture before/after
+      token budgets, compare "context retained" subjectively (does the
+      agent still answer questions about what happened earlier?)
+- [ ] If the qalcode2 experiment succeeds, file the upstream
+      sst/opencode PR with measured data attached
+- [ ] If we land upstream eventually, remove the qalcode2-local patch
+      so we re-converge with stock opencode
 
 ### Acceptance criteria
 
@@ -227,6 +288,9 @@ calls, no changes since 14:18]" when the rolling-window pruner kicks in.
 - Total context retained after compaction grows by ≤ 5% vs nulling
   (because we're adding summaries; trade-off is the model retains useful
   state)
+- The upstream sst/opencode PR receives an "accepted in principle"
+  maintainer comment, even if we end up iterating on the design
+  before merge
 
 ---
 

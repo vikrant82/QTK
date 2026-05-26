@@ -4,7 +4,7 @@
 
 ## Public release — v0.3.0 SHIPPED
 
-QTK is live at https://github.com/fivelidz/QTK and surfaced on qalarc.com.
+QTK is live at https://github.com/qalarc/QTK and surfaced on qalarc.com.
 
 - ✅ Repo fully sanitized for public visibility (no secrets, no personal paths)
 - ✅ Renamed to "Qalarc Token Killer" with "Quantised Token Killer" backronym
@@ -14,7 +14,7 @@ QTK is live at https://github.com/fivelidz/QTK and surfaced on qalarc.com.
   cost figures, install steps, and architecture diagram
 - ✅ Project entry **live** at qalarc.com/projects/project/?slug=qtk
 - ✅ Two blog posts **live** on qalarc.com/blog (layman + technical)
-- ✅ GitHub repo at github.com/fivelidz/QTK is public, MIT-licensed
+- ✅ GitHub repo at github.com/qalarc/QTK is public, MIT-licensed
 - ✅ v0.3.0 tagged + released with full RTK attribution in release notes
 - ✅ RTK credit is prominent in: README "Read this first" block, LICENSE
   (full Apache-2.0 NOTICE + names), docs/RTK-COMPARISON.md, blog posts,
@@ -63,13 +63,13 @@ QTK is live at https://github.com/fivelidz/QTK and surfaced on qalarc.com.
 cd /home/fivelidz/projects/QTK
 
 # Option A: gh CLI creates the repo and pushes in one go
-gh repo create fivelidz/QTK --public --source . --remote origin --push \
+gh repo create qalarc/QTK --public --source . --remote origin --push \
   --description "Deterministic token compression for opencode-based AI coding agents"
 git push origin v0.3.0
 
 # Option B: manually, if you want to inspect first
-gh repo create fivelidz/QTK --public --description "..."
-git remote add origin https://github.com/fivelidz/QTK
+gh repo create qalarc/QTK --public --description "..."
+git remote add origin https://github.com/qalarc/QTK
 git push -u origin main
 git push origin v0.3.0
 ```
