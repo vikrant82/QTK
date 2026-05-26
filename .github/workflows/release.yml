@@ -107,6 +107,11 @@ jobs:
     needs: [build-binary, build-bundle]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Run even if some matrix legs failed — publish what we have. The
+    # softprops/action-gh-release step uses fail_on_unmatched_files: false,
+    # so a missing platform is fine; the release still gets the other 4.
+    # Only block if the TS bundle is missing (that one is universal).
+    if: always() && (needs.build-bundle.result == 'success')
     steps:
       - uses: actions/checkout@v4
       - name: Download all artifacts
