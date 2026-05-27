@@ -1,8 +1,50 @@
 # QTK — Current Build Status
 
-**Last updated:** 2026-05-26
+**Last updated:** 2026-05-27
 
-## Public release — v0.3.0 SHIPPED
+## Latest release — v0.3.1 SHIPPED
+
+QTK v0.3.1 is live at https://github.com/qalarc/QTK/releases/tag/v0.3.1
+with 5 prebuilt artifacts attached (no Rust toolchain needed to install):
+
+| Artifact | Size | Use |
+| --- | ---: | --- |
+| `qtk-plugin.js` | 81 KB | TS plugin bundle (universal) |
+| `qtk-core-x86_64-unknown-linux-musl` | 2.09 MB | Linux Intel/AMD |
+| `qtk-core-aarch64-unknown-linux-musl` | 1.68 MB | Linux ARM (Raspberry Pi, AWS Graviton) |
+| `qtk-core-x86_64-apple-darwin` | 1.75 MB | Intel Mac (cross-compiled from Apple Silicon) |
+| `qtk-core-aarch64-apple-darwin` | 1.65 MB | Apple Silicon Mac |
+
+Both CI + release pipelines tested green end-to-end. Release pipeline
+took 90s for the full matrix build + upload (previously stuck 8h on
+deprecated macos-13 runner; now cross-compiles macOS x86_64 from Apple
+Silicon).
+
+### Org migration done
+
+QTK moved from `github.com/fivelidz/QTK` to `github.com/qalarc/QTK` on
+2026-05-26. Qalarc is now a GitHub organisation owned by fivelidz.
+All old URLs continue to work via GitHub's automatic transfer redirect.
+Migration also updated:
+- qalarc.com `projects.json` (githubUrl, projectUrl, liveUrl)
+- qalarc-blog QTK posts (layman + technical)
+- gmux + gmuxtest QTK references
+- README, LICENSE, CHANGELOG, all docs in QTK repo
+- npm package scope: `@qtk/plugin` → `@qalarc/qtk-plugin`
+
+### Public surface
+
+| Where | URL | Status |
+| --- | --- | --- |
+| GitHub repo | https://github.com/qalarc/QTK | live, public, MIT |
+| Latest release | https://github.com/qalarc/QTK/releases/tag/v0.3.1 | 5 artifacts |
+| CI status | https://github.com/qalarc/QTK/actions | all green |
+| Project page | https://qalarc.com/projects/project/?slug=qtk | live |
+| Layman post | https://qalarc.com/blog/posts/ai-systems/qtk-layman | live |
+| Technical post | https://qalarc.com/blog/posts/ai-systems/qtk-technical | live |
+| npm scope | `@qalarc/qtk-plugin` (scope reserved, not yet published) | queued |
+
+## Public release — v0.3.0 SHIPPED (historical)
 
 QTK is live at https://github.com/qalarc/QTK and surfaced on qalarc.com.
 
