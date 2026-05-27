@@ -35,11 +35,17 @@ jobs:
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             cross: true
+          # macOS: build BOTH x86_64 and aarch64 on a single Apple Silicon
+          # runner. macos-latest is now Apple Silicon (macos-14); we use
+          # `rustup target add x86_64-apple-darwin` to cross-compile the
+          # Intel binary from ARM. This avoids the macos-13 (Intel) runner
+          # which on busy days can be queued for many hours since GitHub
+          # is winding it down.
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             cross: false
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-latest
             cross: false
     timeout-minutes: 25
     steps:
