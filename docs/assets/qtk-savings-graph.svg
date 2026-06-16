@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 560" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+<rect width="920" height="560" fill="#0a1020" rx="14"/>
+<text x="60" y="44" fill="#e6edf3" font-size="26" font-weight="700">QTK — tool-output tokens: before vs after</text>
+<text x="60" y="74" fill="#8b98a9" font-size="15">18 days · 18 projects · 2k tool calls compressed</text>
+<text x="880" y="50" fill="#a6e3a1" font-size="40" font-weight="800" text-anchor="end">91.4%</text>
+<text x="880" y="72" fill="#8b98a9" font-size="14" text-anchor="end">reduction on compressed output</text>
+<line x1="60" y1="464.0" x2="880" y2="464.0" stroke="#1c2638" stroke-width="1"/>
+<text x="50" y="468.0" fill="#8b98a9" font-size="12" text-anchor="end">0</text>
+<line x1="60" y1="385.5" x2="880" y2="385.5" stroke="#1c2638" stroke-width="1"/>
+<text x="50" y="389.5" fill="#8b98a9" font-size="12" text-anchor="end">2.94M</text>
+<line x1="60" y1="307.0" x2="880" y2="307.0" stroke="#1c2638" stroke-width="1"/>
+<text x="50" y="311.0" fill="#8b98a9" font-size="12" text-anchor="end">5.88M</text>
+<line x1="60" y1="228.5" x2="880" y2="228.5" stroke="#1c2638" stroke-width="1"/>
+<text x="50" y="232.5" fill="#8b98a9" font-size="12" text-anchor="end">8.82M</text>
+<line x1="60" y1="150.0" x2="880" y2="150.0" stroke="#1c2638" stroke-width="1"/>
+<text x="50" y="154.0" fill="#8b98a9" font-size="12" text-anchor="end">11.76M</text>
+<rect x="180" y="150.0" width="150" height="314.0" fill="#3a4a63" rx="6"/>
+<text x="255.0" y="136.0" fill="#e6edf3" font-size="20" font-weight="700" text-anchor="middle">11.76M</text>
+<text x="255.0" y="490" fill="#e6edf3" font-size="15" font-weight="600" text-anchor="middle">Raw tool output</text>
+<text x="255.0" y="510" fill="#8b98a9" font-size="12" text-anchor="middle">what the model WOULD see</text>
+<rect x="450" y="437.0" width="150" height="27.0" fill="#5b8def" rx="6"/>
+<rect x="450" y="150.0" width="150" height="287.0" fill="#a6e3a1" opacity="0.42" stroke="#a6e3a1" stroke-width="1.5" stroke-dasharray="5 4" rx="6"/>
+<text x="525.0" y="455.5" fill="#0a1020" font-size="15" font-weight="700" text-anchor="middle">1.01M</text>
+<text x="525.0" y="298.5" fill="#a6e3a1" font-size="20" font-weight="800" text-anchor="middle">10.75M saved</text>
+<text x="525.0" y="490" fill="#e6edf3" font-size="15" font-weight="600" text-anchor="middle">After QTK</text>
+<text x="525.0" y="510" fill="#8b98a9" font-size="12" text-anchor="middle">what the model ACTUALLY sees</text>
+<rect x="660" y="170" width="16" height="16" fill="#5b8def" rx="3"/>
+<text x="684" y="183" fill="#e6edf3" font-size="14">Sent to model</text>
+<rect x="660" y="200" width="16" height="16" fill="#a6e3a1" opacity="0.42" stroke="#a6e3a1" stroke-dasharray="5 4" rx="3"/>
+<text x="684" y="213" fill="#e6edf3" font-size="14">Eliminated by QTK</text>
+<rect x="660" y="230" width="16" height="16" fill="#3a4a63" rx="3"/>
+<text x="684" y="243" fill="#e6edf3" font-size="14">Raw (uncompressed)</text>
+<text x="60" y="544" fill="#8b98a9" font-size="12">Measured across the tool outputs QTK compressed — not total session tokens. Source: qtk-stats.sqlite via qtk-assess.ts. github.com/qalarc/QTK</text>
+</svg>
