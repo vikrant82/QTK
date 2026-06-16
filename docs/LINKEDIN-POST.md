@@ -9,10 +9,16 @@
 > - First 2 lines are the hook — they're all most people see before "…see more". Keep them.
 > - Put the GitHub/qalarc link in the POST body (one link is fine); put the rest in the FIRST COMMENT. LinkedIn suppresses reach on posts with several external links in the body.
 > - Post the image as a native image upload, not a link preview — native images get far more reach.
+>
+> **TWO VERSIONS BELOW — pick one:**
+> - **V1 (THE POST):** RTK-credit-forward. Reads slightly deferential to RTK.
+> - **V2 (THE POST — V2):** QTK-forward. Leads with what's new, surfaces the
+>   zero-telemetry / zero-network point, frames it as "two right answers."
+>   Use this if V1 feels like it sells RTK harder than QTK.
 
 ---
 
-## THE POST
+## THE POST — V1 (RTK-credit-forward)
 
 Three weeks ago I started compressing my AI coding agent's tool output before it reaches the model's context.
 
@@ -36,6 +42,50 @@ Where QTK goes further: RTK is an external CLI, so it only sees shell commands. 
 Same thesis, one layer deeper. RTK goes wide across every agent; QTK goes deep into one.
 
 Free, MIT, zero network code, fully local.
+
+→ https://qalarc.com/projects/project/?slug=qtk
+
+Technical deep-dive + gmux preview in the comments.
+
+#AI #DeveloperTools #OpenSource #AIAgents
+
+---
+
+## THE POST — V2 (QTK-forward; leads with what's new, RTK credit kept but rebalanced)
+
+> Use this version if V1 reads too RTK-favourable. Same facts, but QTK's
+> distinct advantages land before the RTK paragraph, the no-telemetry /
+> zero-network point is surfaced, and the close frames it as "two right
+> answers" rather than "RTK is better, QTK is a lesser cousin." RTK credit
+> is still genuine and prominent — just not the emotional peak of the post.
+
+Three weeks ago I started compressing my AI coding agent's tool output before it ever reaches the model's context.
+
+The result so far: **10.75 million tokens of pure noise eliminated** — git status dumps, directory listings, the same 500-line files read over and over. Across 18 of my projects, the tool outputs it touched shrank by ~91%.
+
+I built **QTK — Qalarc Token Killer**: an open-source plugin for opencode-based agents that rewrites tool output to a compact form before the model sees it. Read a 500-line file → the agent gets a clean signature outline. Re-run `git status` → "unchanged since 14s ago" instead of the whole dump again.
+
+No LLM. No prompt injection. Sub-millisecond latency. **Zero network code — it physically can't phone home.** The model just sees less noise.
+
+Here's what's actually new about it.
+
+Every other tool in this space wraps your shell — it intercepts Bash commands and rewrites them. Clever, but it's blind to everything that isn't a shell command. And in a real coding session, that's most of your context: the agent reading files, searching the codebase, calling MCP tools. None of it touches Bash.
+
+QTK hooks the agent's tool layer from the **inside**, so it reaches what shell-wrappers structurally can't:
+
+→ Compresses file reads, searches, and built-in tools — not just Bash. **That's where 97% of my savings came from.**
+→ Session memory: re-run an identical command, get "unchanged since 14s ago" instead of re-sending output the model already has. Nothing that wraps the shell can do this.
+→ Zero per-call overhead — no subprocess fork, nothing injected into your system prompt. The model doesn't know it's there.
+→ Zero telemetry by construction — no network code anywhere, everything stays local.
+→ An optional Rust sidecar for the heavy structured stuff (JUnit XML, terraform plans, kubectl YAML), streaming-parsed at up to 33k ops/sec.
+
+Credit where it's due: the deterministic-compression thesis was proven at scale by **RTK (rtk-ai/rtk)** — Patrick Szymkowiak, Florian Bruniaux and Adrien Eppling — across 13 AI tools and a 100+ filter corpus. QTK imports their filters wholesale and owes them the idea. If you're on Cursor, Claude Code, Gemini CLI or anything that isn't opencode, RTK is your tool.
+
+But hooking the agent from the inside reaches places an external CLI can't. **RTK goes wide across every agent. QTK goes deep into one** — and depth is where the file-read savings live.
+
+This is also just the first public piece. QTK powers the live token/cost dashboards in **gmux** — my mission-control system for running fleets of AI agents at once (gesture control, voice, phone remote, per-agent status). gmux isn't public yet. QTK is.
+
+Free, MIT, fully local.
 
 → https://qalarc.com/projects/project/?slug=qtk
 
