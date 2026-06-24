@@ -361,7 +361,7 @@ ratio: 0.603 saved: 39.7%
 bun test v1.3.14
  152 pass
  0 fail
- 362 expect() calls
+ 368 expect() calls
 Ran 152 tests across 8 files.
 ```
 

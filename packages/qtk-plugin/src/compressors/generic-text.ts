@@ -30,7 +30,17 @@ const EXCLUDED_TOOLS = new Set([
   "serena_write_memory",
   "serena_edit_memory",
   "serena_delete_memory",
+  "serena_rename_memory",
+  "serena_list_memories",
+  "serena_read_memory",
+  "serena_find_symbol",
+  "serena_find_declaration",
+  "serena_find_implementations",
+  "serena_find_referencing_symbols",
+  "serena_get_symbols_overview",
 ]);
+
+const EXCLUDED_PREFIXES = ["codebase-memory-mcp_", "octocode_local"];
 
 export const genericTextCompressor: Compressor = {
   name: "generic-text",
@@ -39,6 +49,9 @@ export const genericTextCompressor: Compressor = {
   matches(tool: string): boolean {
     const normalized = tool.toLowerCase();
     if (EXCLUDED_TOOLS.has(normalized)) return false;
+    if (EXCLUDED_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
+      return false;
+    }
     return normalized === "task" || normalized.includes("_");
   },
 

@@ -372,10 +372,16 @@ describe("generic-text compressor", () => {
       "bash",
       "serena_replace_content",
       "serena_write_memory",
+      "serena_read_memory",
+      "serena_find_symbol",
+      "serena_get_symbols_overview",
+      "codebase-memory-mcp_get_code_snippet",
+      "codebase-memory-mcp_search_code",
+      "octocode_localget",
     ]) {
       expect(genericTextCompressor.matches(tool, {})).toBe(false);
     }
-    expect(genericTextCompressor.matches("serena_find_symbol", {})).toBe(true);
+    expect(genericTextCompressor.matches("serena_get_diagnostics_for_file", {})).toBe(true);
     expect(genericTextCompressor.matches("task", {})).toBe(true);
   });
 
