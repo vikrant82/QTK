@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(none — most recent changes shipped in 0.3.1)
+### Added
+
+- Built-in `find` / `fd` compressor that clusters one-path-per-line results by containing directory.
+- Built-in `package-manager` compressor for `npm`, `npx`, `pnpm`, `pnpx`, `bun`, `bunx`, and `yarn` output noise.
+- Packaged RTK-compatible TOML filters now load by default, with project-local filters taking precedence.
 
 ## [0.3.1] — 2026-05-26
 

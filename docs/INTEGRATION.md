@@ -125,7 +125,7 @@ You should see:
 
 ```
 [qtk] active — N compressors registered
-[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, rg, pytest, cargo, ...
+[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, find, rg, package-manager, pytest, cargo, ...
 ```
 
 If you see a load error instead, check:
