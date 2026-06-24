@@ -40,7 +40,7 @@ const EXCLUDED_TOOLS = new Set([
   "serena_get_symbols_overview",
 ]);
 
-const EXCLUDED_PREFIXES = ["codebase-memory-mcp_", "octocode_local"];
+const EXCLUDED_PREFIXES = ["codebase-memory-mcp_", "octocode_"];
 
 export const genericTextCompressor: Compressor = {
   name: "generic-text",
