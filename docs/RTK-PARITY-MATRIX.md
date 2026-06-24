@@ -36,7 +36,7 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 | Network/system | `curl`, `wget`, `ping`, `df`, `du`, `ps`, `systemctl`, `rsync` | Some bundled filters active by default; generic fallback active for recognizable text shapes | Add more specific postprocessors as needed | Medium |
 | Generic wrappers | `rtk err`, `rtk test`, `rtk summary`, `rtk log`, `rtk json` | `generic-text` fallback active for path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs | Add RTK/OpenToken-inspired refinements and config | High |
 | Security/redaction | Secret-aware command shaping in RTK command families | Tee redaction only today | Global model-facing redaction pass | Critical |
-| Analytics/discovery | `rtk gain`, `discover`, session analytics | `qtk gain` exists for compression stats | Extend stats for source/family/result-shape, rewrites, redactions, misses | Medium |
+| Analytics/discovery | `rtk gain`, `discover`, session analytics | `qtk gain` reports totals plus by-compressor/tool/source/result-shape for successful compressions | Add pass-through/missed-savings, rewrites, redactions | Medium |
 
 ## Implementation order
 
@@ -53,9 +53,7 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
    `QTK_DISABLED=1` escape hatch.
 6. **Model-facing secret redaction** — redact compressed and pass-through output
    before it reaches the model.
-7. **Analytics expansion** — make `qtk gain` explain savings by compressor
-   source, family, result shape, sidecar, generic fallback, rewrites, redactions,
-   and missed-savings candidates.
+7. **Analytics expansion** — partially done for successful compressions: `qtk gain` explains savings by compressor, tool, source, and result shape. Remaining: pass-through/missed-savings candidates, rewrites, and redactions.
 
 ## What not to port
 

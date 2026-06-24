@@ -71,7 +71,7 @@ qtk-plugin/
 
     stats.ts           ← SQLite logger
                          schema = (ts, sessionID, tool, command_head,
-                                   orig_bytes, comp_bytes, ratio, ...)
+                                    result_shape, source, lossy, bytes, ratio, ...)
 
     estimator.ts       ← token estimator (chars/4, matches opencode's)
     result-text.ts     ← extracts/mutates normal output and MCP text content
@@ -286,7 +286,11 @@ CREATE TABLE IF NOT EXISTS compressions (
   was_cache_hit            INTEGER NOT NULL,
   tee_file                 TEXT,           -- relative path or NULL
   agent_read_tee           INTEGER NOT NULL DEFAULT 0,
-  duration_ms              INTEGER NOT NULL
+  duration_ms              INTEGER NOT NULL,
+  result_shape             TEXT NOT NULL DEFAULT 'output',
+  compressor_source        TEXT NOT NULL DEFAULT 'builtin',
+  is_lossy                 INTEGER NOT NULL DEFAULT 0,
+  is_generic               INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_session ON compressions(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool ON compressions(tool);

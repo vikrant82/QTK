@@ -62,10 +62,10 @@ Working `qtk-plugin` that:
 - [x] `packages/qtk-plugin/src/{types,registry,config,cache,tee,stats,estimator,circuit-breaker}.ts`
 - [x] `packages/qtk-plugin/src/compressors/{git,ls,find,rg,package-manager,cargo,pytest}.ts`
 - [x] `packages/qtk-plugin/src/tools/{read,grep,glob}.ts`
-- [x] `packages/qtk-plugin/test/compressors.test.ts` — 51 compressor tests
+- [x] `packages/qtk-plugin/test/compressors.test.ts` — 61 compressor tests
 - [x] `scripts/install-into-opencode.ts` — symlink + jsonc edit + smoke test
 - [x] `scripts/benchmark.ts` — measure compression ratios and p50/p90/p99 latency
-- [x] `qtk gain` CLI — prints session-totals summary
+- [x] `qtk gain` CLI — prints session totals plus by-compressor/tool/source/result-shape summaries
 
 ### Acceptance criteria — met
 
