@@ -358,11 +358,11 @@ ratio: 0.603 saved: 39.7%
 ### Test summary
 
 ```
-bun test v1.3.6
- 40 pass
+bun test v1.3.14
+ 160 pass
  0 fail
- 92 expect() calls
-Ran 40 tests across 1 file. [40.00ms]
+ 413 expect() calls
+Ran 160 tests across 10 files.
 ```
 
 ### Coverage by area
@@ -370,9 +370,11 @@ Ran 40 tests across 1 file. [40.00ms]
 | Area                  | Tests | Notes                                                 |
 | --------------------- | ----- | ----------------------------------------------------- |
 | git status compressor | 8     | match/non-match, typical/clean/garbage/adversarial    |
-| git log compressor    | 3     | match, no-match for --oneline, multi-line parsing     |
+| git log compressor    | 4     | registration, matching, --oneline, multi-line parsing |
 | ls compressor         | 3     | match, piped-exclusion, long-format parsing           |
+| find/fd compressor    | 4     | path-list clustering, shell/action exclusions         |
 | rg compressor         | 3     | rg + grep -r matching, no-heading format              |
+| package manager       | 6     | install/list noise, dependency trees, runner safety   |
 | pytest compressor     | 3     | match, passing→summary, failing→keep                  |
 | cargo compressor      | 2     | match, Compiling-strip                                |
 | Read tool             | 3     | match, long-file outline, short-file passthrough      |
@@ -402,7 +404,7 @@ this when sessions are quiet.
 - ✅ ~~TOML filter DSL parser + runtime~~ — Phase 2 complete
 - ✅ ~~`scripts/import-rtk-filters.ts`~~ — Phase 2 complete (local-checkout import; no network code)
 - ✅ ~~Hot-reload of filter files~~ — Phase 2 complete (fs.watch + 250ms debounce)
-- ⬜ Actually import RTK's 50+ filter corpus into `packages/qtk-filters/imported/` — requires a local `git clone rtk-ai/rtk` first
+- ✅ RTK filter corpus imported into `packages/qtk-filters/imported/` and bundled filters load by default
 - ⬜ `qtk-core` Rust sidecar (Phase 3)
 - ⬜ gmux/tauri dashboard widget (Phase 4)
 - ⬜ Compaction integration (Phase 5)
@@ -440,12 +442,17 @@ QTK/
 │   │   │   ├── estimator.ts
 │   │   │   ├── circuit-breaker.ts
 │   │   │   ├── registry.ts          ← + prepend/replaceUserCompressors for DSL
-│   │   │   ├── compressors/         ← Phase 1 hand-written compressors
+│   │   │   ├── result-text.ts       ← normal/MCP text extraction + mutation
+│   │   │   ├── rewrite.ts           ← safe tool.execute.before quiet rewrites
+│   │   │   ├── compressors/         ← Phase 1/2 hand-written compressors
 │   │   │   │   ├── git.ts
 │   │   │   │   ├── ls.ts
+│   │   │   │   ├── find.ts
 │   │   │   │   ├── rg.ts
+│   │   │   │   ├── package-manager.ts
 │   │   │   │   ├── pytest.ts
-│   │   │   │   └── cargo.ts
+│   │   │   │   ├── cargo.ts
+│   │   │   │   └── generic-text.ts
 │   │   │   ├── tools/               ← Phase 1 built-in tool compressors
 │   │   │   │   ├── read.ts
 │   │   │   │   ├── grep.ts
@@ -460,8 +467,11 @@ QTK/
 │   │   │   └── cli/
 │   │   │       └── gain.ts          ← `qtk gain` analytics CLI
 │   │   ├── test/
-│   │   │   ├── compressors.test.ts  ← 40 tests (Phase 1)
+│   │   │   ├── compressors.test.ts  ← 61 tests (Phase 1/2/4 compressors)
 │   │   │   ├── dsl.test.ts          ← 39 tests (Phase 2 — NEW)
+│   │   │   ├── rewrite.test.ts       ← safe pre-call rewrite tests
+│   │   │   ├── result-text.test.ts   ← MCP result-shape tests
+│   │   │   ├── plugin-hook.test.ts   ← opencode hook compatibility tests
 │   │   │   └── fixtures/
 │   │   │       └── git/status-long.input.txt
 │   │   └── dist/

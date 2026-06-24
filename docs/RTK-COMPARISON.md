@@ -1,15 +1,15 @@
 # QTK vs RTK — A Detailed Comparison
 
 > **Read this first:** [RTK](https://github.com/rtk-ai/rtk) is the mature,
-> production-grade project. 54k+ GitHub stars, 185 releases, supports 13
-> AI coding tools across Linux/macOS/Windows, ships a 100+ command filter
-> corpus. It is the project that proved deterministic token compression
+> production-grade project. 65k+ GitHub stars, 200+ releases, supports 14
+> AI coding tools across Linux/macOS/Windows, and ships 100+ supported
+> command filters. It is the project that proved deterministic token compression
 > works at scale. Built by Patrick Szymkowiak, Florian Bruniaux, Adrien
 > Eppling, and the RTK community. Licensed Apache-2.0.
 >
 > **If you're not running opencode specifically, you almost certainly want
 > RTK, not QTK.** RTK supports Claude Code, Cursor, Gemini CLI, GitHub
-> Copilot, Codex, Windsurf, Cline, Roo Code, OpenCode, OpenClaw, Hermes,
+> Copilot, Codex, Windsurf, Cline, Roo Code, OpenCode, OpenClaw, Pi, Hermes,
 > Kilo Code, Antigravity — basically every serious AI coding agent.
 >
 > QTK is a much narrower project. It asks one question: *if we built this
@@ -28,10 +28,10 @@
 |                                  | RTK                                           | QTK                                        |
 | -------------------------------- | --------------------------------------------- | ------------------------------------------ |
 | Form factor                      | External Rust binary (~8 MB)                  | TypeScript plugin file                     |
-| Lines of code                    | ~50,000 Rust + 100+ TOML filters              | Target Phase 1: ~3,000 TS                  |
+| Lines of code                    | ~50,000 Rust + 100+ supported commands        | Target Phase 1: ~3,000 TS                  |
 | Installation                     | `cargo install`, `brew install`, `install.sh` | Symlink a file into `.opencode/plugin/`    |
 | Process model                    | Spawn per call (forks `rtk rewrite`)          | In-process, no subprocess                  |
-| Tool scope                       | Bash only (via hook)                          | All tools that use `tool.execute.after`    |
+| Tool scope                       | Bash command rewriting                        | opencode tools with string `output`; MCP observed but pass-through today |
 | Compression timing               | Before tool call (rewrites command)           | After tool call (rewrites output)          |
 | Prompt overhead                  | ~hundreds of tokens of CLAUDE.md hint         | Zero                                       |
 | Per-call latency                 | 5–15 ms                                       | 1–4 ms                                     |
@@ -42,9 +42,9 @@
 | Tee perms                        | 0o644 (umask default — world-readable!)       | 0o600 explicit                             |
 | Telemetry kill switch            | Runtime + env var                             | Not applicable (no network code exists)    |
 | Coverage of `Read`/`Grep`/`Glob` | Zero                                          | Full                                       |
-| Built-in test runners            | jest/vitest/pytest/cargo/go/playwright        | Phase 1: pytest/cargo/jest/vitest          |
+| Built-in test runners            | jest/vitest/pytest/cargo/go/playwright        | Active: pytest/cargo; planned: jest/vitest/playwright/go |
 | Standalone CLI                   | Yes (`rtk`)                                   | Only `qtk gain` (optional analytics)       |
-| Cross-agent support              | 13+ agents                                    | opencode plugin surface only               |
+| Cross-agent support              | 14+ agents                                    | opencode plugin surface only               |
 
 ---
 

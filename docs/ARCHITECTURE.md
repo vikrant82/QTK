@@ -7,15 +7,15 @@
 
 ## 1. Where QTK lives in opencode's tool-call lifecycle
 
-Every tool call in opencode (`Bash`, `Read`, `Grep`, `Glob`, MCP tools, the
-`Task` sub-agent tool) flows through one wrapper function in
-`packages/opencode/src/session/prompt.ts` around line 1036–1088:
+Model-executed registered tools in current opencode (`Bash`, `Read`, `Grep`,
+`Glob`, `Task`, and MCP tools) flow through the tool resolver in
+`packages/opencode/src/session/tools.ts`:
 
 ```ts
 async execute(args, options) {
   await Plugin.trigger(
     "tool.execute.before",
-    { tool: item.id, sessionID, callID: options.toolCallId },
+    { tool: item.id, sessionID, callID: options.toolCallId, args },
     { args },
   )
 
@@ -23,21 +23,27 @@ async execute(args, options) {
 
   await Plugin.trigger(
     "tool.execute.after",
-    { tool: item.id, sessionID, callID: options.toolCallId },
+    { tool: item.id, sessionID, callID: options.toolCallId, args },
     result,                                          // ← QTK mutates this
   )
   return result
 },
 toModelOutput(result) {
-  return { type: "text", value: result.output }     // ← this is what the LLM sees
+  return { type: "text", value: result.output }     // ← normal tools
 }
 ```
 
 `Plugin.trigger` walks the registered plugins in order and calls each hook
-function with the **mutable** `result` object. **Any plugin can mutate
-`result.output`** and the change flows directly into `toModelOutput()`.
+function with the **mutable** `result` object. QTK registers a
+`tool.execute.after` hook and rewrites compressible text in place.
 
-QTK registers a `tool.execute.after` hook and rewrites `result.output` in place.
+For normal opencode tools, that text lives at `result.output`. For MCP tools,
+the hook sees raw `content` items before opencode flattens them into
+`result.output`; QTK normalizes those text content/resource entries and writes
+the compressed envelope back to the same result shape.
+
+User-triggered TUI shell commands (`!cmd`) use a separate opencode path and do
+not appear to trigger `tool.execute.after` today.
 
 That's the entire integration surface. ~5 lines in opencode we don't have to
 touch.
@@ -65,25 +71,29 @@ qtk-plugin/
 
     stats.ts           ← SQLite logger
                          schema = (ts, sessionID, tool, command_head,
-                                   orig_bytes, comp_bytes, ratio, ...)
+                                    result_shape, source, lossy, bytes, ratio, ...)
 
     estimator.ts       ← token estimator (chars/4, matches opencode's)
+    result-text.ts     ← extracts/mutates normal output and MCP text content
 
     compressors/       ← per-command compressors
-      git.ts             git status / log / diff
+      git.ts             git status / log (2 distinct compressors)
       ls.ts              ls / ls -la
+      find.ts            find / fd path-list clustering
       rg.ts              ripgrep output (also covers `grep -r`)
-      find.ts            find / fd
+      package-manager.ts npm / pnpm / bun / yarn install/list noise
       cargo.ts           cargo build/test/clippy
       pytest.ts          pytest summaries
-      npm.ts             npm install/test/run-script
-      jest.ts            jest / vitest JSON output
-      generic.ts         fallback heuristics for unknown commands
+      generic-text.ts    last-resort lossy fallback for MCP/task text shapes
 
     tools/             ← compressors for built-in opencode tools
       read.ts            Read tool → outline if too long
       grep.ts            Grep tool → group by file
       glob.ts            Glob tool → cluster by directory
+
+    dsl/               ← project-local TOML filters
+    sidecar/           ← optional qtk-core client and async wrappers
+    cli/               ← qtk gain analytics
 ```
 
 ---
@@ -96,7 +106,7 @@ qtk-plugin/
 │                                                                         │
 │ 1. LLM emits tool_use: bash {"command": "git status"}                   │
 │                                                                         │
-│ 2. session/prompt.ts wraps the bash tool's execute()                    │
+│ 2. session/tools.ts wraps the bash tool's execute()                     │
 │    ↓                                                                    │
 │    fires Plugin.trigger("tool.execute.before") → RTK plugin             │
 │    (if RTK is installed, it MAY rewrite to "rtk git status")            │
@@ -117,7 +127,7 @@ qtk-plugin/
 │                                                                         │
 │    c. Pick compressor:                                                  │
 │         registry.lookup(tool, args.command)                             │
-│         If no match → generic.ts heuristics                             │
+│         If no match → leave output unchanged today                      │
 │                                                                         │
 │    d. compressor.compress(result.output) → compressed string            │
 │         If compressor throws → log + leave output unchanged             │
@@ -132,7 +142,7 @@ qtk-plugin/
 │    f. stats.log(...)                                                    │
 │    g. cache.put(fingerprint, outputHash, compressed)                    │
 │                                                                         │
-│ 6. session/prompt.ts → toModelOutput(result) → LLM context              │
+│ 6. opencode result conversion → LLM context                             │
 │    (250 bytes of compact text + 1.8 KB invisible on disk)               │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -276,7 +286,11 @@ CREATE TABLE IF NOT EXISTS compressions (
   was_cache_hit            INTEGER NOT NULL,
   tee_file                 TEXT,           -- relative path or NULL
   agent_read_tee           INTEGER NOT NULL DEFAULT 0,
-  duration_ms              INTEGER NOT NULL
+  duration_ms              INTEGER NOT NULL,
+  result_shape             TEXT NOT NULL DEFAULT 'output',
+  compressor_source        TEXT NOT NULL DEFAULT 'builtin',
+  is_lossy                 INTEGER NOT NULL DEFAULT 0,
+  is_generic               INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_session ON compressions(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool ON compressions(tool);

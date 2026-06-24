@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(none — most recent changes shipped in 0.3.1)
+### Added
+
+- Built-in `find` / `fd` compressor that clusters one-path-per-line results by containing directory.
+- Built-in `package-manager` compressor for `npm`, `npx`, `pnpm`, `pnpx`, `bun`, `bunx`, and `yarn` output noise.
+- Packaged RTK-compatible TOML filters now load by default, with project-local filters taking precedence.
+- Result-text normalizer for MCP text content arrays/resources, allowing compressors to rewrite MCP text outputs before opencode flattens them.
+- `generic-text` fallback compressor for recognizable MCP/task text shapes: path lists, diagnostics, JSON schema summaries, markdown outlines, and repeated/log-like lines. Generic output is marked `lossy=true` and requires a raw tee file.
+- Expanded analytics metadata for successful compressions: result shape, compressor source, generic/lossy flags, `qtk gain` breakdowns by tool/source/result shape, and JSON savings export groups.
+- Conservative `tool.execute.before` command rewrites for Bash: `pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`, and aggressive Gradle `--quiet --console=plain`, with verbosity flags and `QTK_REWRITE_DISABLED=1` escape hatch.
+- `qtk-runtime` opencode skill advising agents how to recover exact output from QTK tee files or exact reruns.
 
 ## [0.3.1] — 2026-05-26
 
@@ -66,9 +75,9 @@ Initial public release on [github.com/qalarc/QTK](https://github.com/qalarc/QTK)
 - `rg` / `grep -r` (multi-file results → grouped by file with top matches)
 - `pytest` (passing → summary; failing → FAILED + trace heads)
 - `cargo build/test/clippy` (Compiling-noise stripped, errors preserved)
-- `read-tool` (>200 line files → signature outline)
-- `grep-tool` (multi-file results → grouped)
-- `glob-tool` (>30 paths → clustered by 2-deep dir prefix)
+- `tool-read` (>200 line files → signature outline)
+- `tool-grep` (multi-file results → grouped)
+- `tool-glob` (>30 paths → clustered by 2-deep dir prefix)
 
 Infrastructure:
 

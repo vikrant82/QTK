@@ -14,7 +14,9 @@ import {
   gitLogCompressor,
 } from "../packages/qtk-plugin/src/compressors/git.ts";
 import { lsCompressor } from "../packages/qtk-plugin/src/compressors/ls.ts";
+import { findCompressor } from "../packages/qtk-plugin/src/compressors/find.ts";
 import { rgCompressor } from "../packages/qtk-plugin/src/compressors/rg.ts";
+import { packageManagerCompressor } from "../packages/qtk-plugin/src/compressors/package-manager.ts";
 import { pytestCompressor } from "../packages/qtk-plugin/src/compressors/pytest.ts";
 import { cargoTestCompressor } from "../packages/qtk-plugin/src/compressors/cargo.ts";
 import { readToolCompressor } from "../packages/qtk-plugin/src/tools/read.ts";
@@ -140,6 +142,40 @@ ${filesB.join("\n")}
           `pod-deployment-7d8c9b7f5-${("000" + i).slice(-4)}   1/1     ${s}     ${i % 5}          ${i}d`,
         );
       }
+      return lines.join("\n");
+    },
+  },
+  {
+    name: "find (75 paths, 3 dirs)",
+    compressor: findCompressor,
+    tool: "bash",
+    args: { command: "find . -name '*.ts'" },
+    inputProvider: async () => {
+      const paths: string[] = [];
+      for (let i = 0; i < 35; i++) paths.push(`./src/api/handler-${i}.ts`);
+      for (let i = 0; i < 25; i++) paths.push(`./src/ui/component-${i}.tsx`);
+      for (let i = 0; i < 15; i++) paths.push(`./test/fixtures/case-${i}.json`);
+      return paths.join("\n");
+    },
+  },
+  {
+    name: "package manager install noise",
+    compressor: packageManagerCompressor,
+    tool: "bash",
+    args: { command: "npm install" },
+    inputProvider: async () => {
+      const lines = [
+        "> app@1.0.0 postinstall",
+        "> node scripts/postinstall.js",
+        "npm WARN deprecated inflight@1.0.6: This module is not supported",
+        "npm WARN deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported",
+      ];
+      for (let i = 0; i < 80; i++) {
+        lines.push(`Progress: resolved ${i * 7}, reused ${i * 6}, downloaded ${i % 5}, added ${i % 3}`);
+      }
+      lines.push("added 412 packages, and audited 413 packages in 12s");
+      lines.push("87 packages are looking for funding");
+      lines.push("Build completed successfully");
       return lines.join("\n");
     },
   },

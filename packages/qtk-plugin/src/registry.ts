@@ -6,11 +6,14 @@ import type { Compressor } from "./types.ts";
 
 // Compressors imported here — each is a small module exporting a single
 // instance.
-import { gitStatusCompressor } from "./compressors/git.ts";
+import { gitLogCompressor, gitStatusCompressor } from "./compressors/git.ts";
 import { lsCompressor } from "./compressors/ls.ts";
+import { findCompressor } from "./compressors/find.ts";
 import { rgCompressor } from "./compressors/rg.ts";
 import { pytestCompressor } from "./compressors/pytest.ts";
 import { cargoTestCompressor } from "./compressors/cargo.ts";
+import { packageManagerCompressor } from "./compressors/package-manager.ts";
+import { genericTextCompressor } from "./compressors/generic-text.ts";
 import { readToolCompressor } from "./tools/read.ts";
 import { grepToolCompressor } from "./tools/grep.ts";
 import { globToolCompressor } from "./tools/glob.ts";
@@ -25,10 +28,15 @@ export const DEFAULT_COMPRESSORS: readonly Compressor[] = [
   globToolCompressor,
   // Then shell command compressors
   gitStatusCompressor,
+  gitLogCompressor,
   lsCompressor,
+  findCompressor,
   rgCompressor,
+  packageManagerCompressor,
   pytestCompressor,
   cargoTestCompressor,
+  // Last-resort content-shape compressor for MCP/task text outputs.
+  genericTextCompressor,
 ];
 
 export class CompressorRegistry {

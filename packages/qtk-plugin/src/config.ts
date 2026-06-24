@@ -19,6 +19,10 @@ const DEFAULT_CONFIG: QtkConfig = {
     enabled: true,
     database: ".opencode/qtk-stats.sqlite",
   },
+  filters: {
+    bundled: true,
+    project: true,
+  },
   compressors: {},
   tools: {},
 };
@@ -134,6 +138,8 @@ function mergeConfig(
   const teeOverride = (qtk.tee as Record<string, unknown> | undefined) ?? {};
   const statsOverride =
     (qtk.stats as Record<string, unknown> | undefined) ?? {};
+  const filtersOverride =
+    (qtk.filters as Record<string, unknown> | undefined) ?? {};
   const compOverride =
     (qtk.compressors as Record<string, Record<string, unknown>> | undefined) ??
     {};
@@ -161,6 +167,13 @@ function mergeConfig(
         (statsOverride.enabled as boolean | undefined) ?? base.stats.enabled,
       database:
         (statsOverride.database as string | undefined) ?? base.stats.database,
+    },
+    filters: {
+      bundled:
+        (filtersOverride.bundled as boolean | undefined) ??
+        base.filters.bundled,
+      project:
+        (filtersOverride.project as boolean | undefined) ?? base.filters.project,
     },
     compressors: { ...base.compressors, ...compOverride },
     tools: { ...base.tools, ...toolsOverride },

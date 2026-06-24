@@ -42,6 +42,10 @@ export interface CompressorContext {
 /** Result of attempting to compress an output. */
 export interface CompressionOutcome {
   readonly compressor: string;
+  readonly compressorSource?: string;
+  readonly resultShape?: string;
+  readonly isLossy?: boolean;
+  readonly isGeneric?: boolean;
   readonly originalBytes: number;
   readonly compressedBytes: number;
   readonly originalTokensEst: number;
@@ -78,6 +82,13 @@ export interface QtkConfig {
   readonly stats: {
     readonly enabled: boolean;
     readonly database: string;
+  };
+
+  readonly filters: {
+    /** Load RTK-compatible filters bundled with the package. */
+    readonly bundled: boolean;
+    /** Load project-local filters from .opencode/qtk/filters. */
+    readonly project: boolean;
   };
 
   /** Per-compressor overrides. Free-form map; each compressor reads its own keys. */

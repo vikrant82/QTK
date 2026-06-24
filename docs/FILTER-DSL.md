@@ -3,15 +3,15 @@
 > The Phase 2 TOML filter DSL lets users add per-project compressors without
 > writing TypeScript. This doc is the full reference of supported keys.
 >
-> **Status:** Specification complete; implementation lands in Phase 2.
-> Phase 1 ships only hand-written TS compressors.
+> **Status:** Implemented. Project-local filters are loaded from
+> `.opencode/qtk/filters/*.toml` and hot-reloaded during an opencode session.
 
 ---
 
 ## Why a DSL
 
-Phase 1 ships 7–15 hand-written TypeScript compressors covering the most-used
-commands. But the long tail of commands is enormous — every team uses
+QTK ships a small set of hand-written TypeScript compressors covering the
+highest-volume tools. But the long tail of commands is enormous — every team uses
 different tools (terraform, kubectl, docker compose, dbt, sqlx, prisma,
 their custom scripts, etc.). We can't ship a TS compressor for every one.
 
@@ -20,8 +20,9 @@ that lives in their project's `.opencode/qtk/filters/` directory. No
 JavaScript skills needed; no rebuild of QTK; no PR upstream.
 
 The format is designed to be compatible with RTK's TOML filter format
-(Apache 2.0). We can `scripts/import-rtk-filters.ts` their corpus and get
-~50 ready-to-use filters for free.
+(Apache 2.0). `scripts/import-rtk-filters.ts` imports RTK filters into
+`packages/qtk-filters/imported/`; the plugin packages those imported filters
+and loads them by default before built-in compressors.
 
 ---
 
@@ -35,9 +36,19 @@ The format is designed to be compatible with RTK's TOML filter format
   └─ my-custom-script.toml
 ```
 
-Files are scanned at session start AND hot-reloaded on save during a
-session. File name is just for organisation — the `command` key inside is
+Project-local files are scanned at session start AND hot-reloaded on save during
+a session. File name is just for organisation — the `command` key inside is
 what matters for matching.
+
+Bundled imported filters are loaded from the package at startup. Project-local
+filters take precedence over bundled filters, and bundled filters take
+precedence over built-in compressors.
+
+```toml
+[qtk.filters]
+bundled = true  # default: load packaged RTK-compatible filters
+project = true  # default: load .opencode/qtk/filters/*.toml
+```
 
 ---
 
@@ -51,9 +62,9 @@ The command(s) this filter applies to. Supports:
 - Wildcard: `command = "kubectl get *"`
 - Multiple: `command = ["docker ps", "docker container ls"]`
 
-The first filter whose `command` matches a tool call wins. Filters in
-`.opencode/qtk/filters/` override any built-in compressor with the same
-match.
+The first filter whose `command` matches a tool call wins. Project filters in
+`.opencode/qtk/filters/` override bundled filters and built-in compressors with
+the same match.
 
 ### `pass_through_if` (optional)
 

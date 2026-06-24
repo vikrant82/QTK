@@ -10,15 +10,19 @@ import {
   gitLogCompressor,
 } from "../src/compressors/git.ts";
 import { lsCompressor } from "../src/compressors/ls.ts";
+import { findCompressor } from "../src/compressors/find.ts";
 import { rgCompressor } from "../src/compressors/rg.ts";
 import { pytestCompressor } from "../src/compressors/pytest.ts";
 import { cargoTestCompressor } from "../src/compressors/cargo.ts";
+import { packageManagerCompressor } from "../src/compressors/package-manager.ts";
+import { genericTextCompressor } from "../src/compressors/generic-text.ts";
 import { readToolCompressor } from "../src/tools/read.ts";
 import { grepToolCompressor } from "../src/tools/grep.ts";
 import { globToolCompressor } from "../src/tools/glob.ts";
 import { SessionCache } from "../src/cache.ts";
 import { CircuitBreaker } from "../src/circuit-breaker.ts";
 import { _internal as teeInternal } from "../src/tee.ts";
+import { CompressorRegistry } from "../src/registry.ts";
 import type { Compressor } from "../src/types.ts";
 
 const CTX = { args: {}, cwd: "/tmp", config: {} };
@@ -151,6 +155,10 @@ nothing to commit, working tree clean
 // ─── git log ────────────────────────────────────────────────────────────────
 
 describe("git-log compressor", () => {
+  test("is registered by default", () => {
+    expect(new CompressorRegistry().names()).toContain("git-log");
+  });
+
   test("matches `git log`", () => {
     expect(gitLogCompressor.matches("bash", { command: "git log" })).toBe(true);
     expect(gitLogCompressor.matches("bash", { command: "git log -n 10" })).toBe(
@@ -221,6 +229,251 @@ drwxr-xr-x  2 user user  4096 May 20 14:23 scripts
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("packages/");
     expect(out).toContain("README.md");
+  });
+});
+
+// ─── find / fd ───────────────────────────────────────────────────────────────
+
+describe("find compressor", () => {
+  test("is registered by default", () => {
+    expect(new CompressorRegistry().names()).toContain("find");
+  });
+
+  test("matches simple find/fd path-list commands", () => {
+    expect(findCompressor.matches("bash", { command: "find . -name '*.ts'" })).toBe(
+      true,
+    );
+    expect(findCompressor.matches("bash", { command: "fd Controller src" })).toBe(
+      true,
+    );
+  });
+
+  test("does NOT match shell compositions or null-delimited output", () => {
+    expect(findCompressor.matches("bash", { command: "find . | head" })).toBe(
+      false,
+    );
+    expect(findCompressor.matches("bash", { command: "find . -print0" })).toBe(
+      false,
+    );
+    expect(findCompressor.matches("bash", { command: "fd foo -x rm" })).toBe(
+      false,
+    );
+  });
+
+  test("clusters many paths by directory", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 30; i++) lines.push(`./src/api/handler-${i}.ts`);
+    for (let i = 0; i < 18; i++) lines.push(`./src/ui/component-${i}.tsx`);
+    for (let i = 0; i < 12; i++) lines.push(`./test/fixtures/case-${i}.json`);
+
+    const input = lines.join("\n");
+    const out = findCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("60 paths in 3 directories");
+    expect(out).toContain("src/api/ (30):");
+    expect(out).toContain("... +22");
+  });
+});
+
+// ─── package managers ───────────────────────────────────────────────────────
+
+describe("package-manager compressor", () => {
+  test("is registered by default", () => {
+    expect(new CompressorRegistry().names()).toContain("package-manager");
+  });
+
+  test("matches package-manager install/list/audit commands", () => {
+    for (const command of [
+      "npm install",
+      "pnpm install",
+      "bun install",
+      "yarn add react",
+      "npm audit",
+      "bun pm ls",
+    ]) {
+      expect(packageManagerCompressor.matches("bash", { command })).toBe(true);
+    }
+  });
+
+  test("does NOT match shell compositions or test/build runners", () => {
+    expect(
+      packageManagerCompressor.matches("bash", { command: "npm test | cat" }),
+    ).toBe(false);
+    for (const command of ["yarn test", "npx vitest", "bun test", "npm run build"]) {
+      expect(packageManagerCompressor.matches("bash", { command })).toBe(false);
+    }
+  });
+
+  test("strips package-manager install/run boilerplate", () => {
+    const input = `> app@1.0.0 build
+> next build
+
+npm WARN deprecated inflight@1.0.6: This module is not supported
+npm WARN deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm notice New minor version of npm available
+Progress: resolved 10, reused 9, downloaded 1, added 0
+Progress: resolved 200, reused 199, downloaded 1, added 42
+added 412 packages, and audited 413 packages in 12s
+
+87 packages are looking for funding
+Run \`npm fund\` for details
+
+2 moderate severity vulnerabilities
+To address all issues, run: npm audit fix
+Build completed successfully
+`;
+    const out = packageManagerCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("package-manager: removed");
+    expect(out).toContain("deprecated: inflight@1.0.6, glob@7.2.3");
+    expect(out).toContain("Build completed successfully");
+    expect(out).not.toContain("Progress: resolved");
+  });
+
+  test("compresses pnpm dependency trees", () => {
+    const deps: string[] = ["dependencies:"];
+    for (let i = 0; i < 55; i++) deps.push(`├─ package-${i} 1.${i}.0`);
+    const input = deps.join("\n");
+    const out = packageManagerCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("55 dependencies listed");
+    expect(out).toContain("package-0@1.0.0");
+    expect(out).toContain("... +15 more");
+  });
+
+  test("does not treat test-result trees as dependency trees", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 30; i++) lines.push(`├─ src/test-${i}.test.ts PASS`);
+    lines.push("FAIL src/auth.test.ts > rejects invalid token");
+    lines.push("Error: expected 401, received 200");
+    const input = lines.join("\n");
+    const out = packageManagerCompressor.compress(input, CTX);
+    expect(out).toBe(input);
+  });
+});
+
+// ─── generic text fallback ──────────────────────────────────────────────────
+
+describe("generic-text compressor", () => {
+  test("is registered last by default", () => {
+    const names = new CompressorRegistry().names();
+    expect(names).toContain("generic-text");
+    expect(names.at(-1)).toBe("generic-text");
+  });
+
+  test("does NOT match mutation/control tools", () => {
+    for (const tool of [
+      "apply_patch",
+      "edit",
+      "write",
+      "todowrite",
+      "question",
+      "read",
+      "bash",
+      "serena_replace_content",
+      "serena_write_memory",
+      "serena_read_memory",
+      "serena_find_symbol",
+      "serena_get_symbols_overview",
+      "codebase-memory-mcp_get_code_snippet",
+      "codebase-memory-mcp_search_code",
+      "octocode_localget",
+      "octocode_githubgetfilecontent",
+      "octocode_packagesearch",
+    ]) {
+      expect(genericTextCompressor.matches(tool, {})).toBe(false);
+    }
+    expect(genericTextCompressor.matches("serena_get_diagnostics_for_file", {})).toBe(true);
+    expect(genericTextCompressor.matches("task", {})).toBe(true);
+  });
+
+  test("compresses MCP-style path lists", () => {
+    const paths: string[] = [];
+    for (let i = 0; i < 35; i++) paths.push(`packages/app/src/file-${i}.ts`);
+    for (let i = 0; i < 25; i++) paths.push(`packages/ui/src/comp-${i}.tsx`);
+
+    const input = paths.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("60 paths in 2 directories");
+  });
+
+  test("does not treat source code as a path list", () => {
+    const input = Array.from(
+      { length: 80 },
+      (_, i) => `const url${i} = api/client.divide(total / count);`,
+    ).join("\n");
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("compresses diagnostics grouped by file", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      lines.push(`src/api/user.ts:${10 + i}:5: error TS2322: Type mismatch ${i}`);
+    }
+    for (let i = 0; i < 8; i++) {
+      lines.push(`src/ui/view.tsx:${20 + i}:1: warning: unused import ${i}`);
+    }
+
+    const input = lines.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("20 diagnostics across 2 files");
+  });
+
+  test("compresses large JSON into a schema summary", () => {
+    const input = JSON.stringify({
+      items: Array.from({ length: 80 }, (_, i) => ({
+        id: i,
+        name: `item-${i}`,
+        nested: { enabled: i % 2 === 0, tags: ["a", "b", "c"] },
+      })),
+      metadata: { total: 80, page: 1, source: "test" },
+    });
+
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("json summary:");
+    expect(out).toContain("$.items: array(80)");
+  });
+
+  test("compresses markdown-like summaries into an outline", () => {
+    const sections: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      sections.push(`## Section ${i}`);
+      sections.push(`Long prose for section ${i} `.repeat(12));
+      sections.push(`- bullet ${i}A with details`);
+      sections.push(`- bullet ${i}B with details`);
+    }
+    const input = sections.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("text outline:");
+    expect(out).toContain("lead:");
+    expect(out).toContain("## Section 0");
+  });
+
+  test("preserves notable unique lines in repeated logs", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 80; i++) {
+      lines.push(
+        `2026-06-24T10:12:${String(i).padStart(2, "0")}Z pid=${1000 + i} request_id=req-${i} took=${20 + i}ms retrying`,
+      );
+    }
+    lines.push("ERROR repeated timeout from worker");
+    lines.push("ERROR repeated timeout from worker");
+    lines.push("ERROR failed to connect to database at src/db.ts:42");
+    const input = lines.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("repeated after normalization");
+    expect(out.match(/ERROR repeated timeout/g)?.length).toBe(1);
+    expect(out).toContain("ERROR failed to connect");
+  });
+
+  test("passes through ambiguous prose below threshold", () => {
+    const input = "hello world\n".repeat(20);
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
   });
 });
 
@@ -477,6 +730,19 @@ describe("SessionCache", () => {
     c.put(fp, "hash-A", "compressed-A");
     expect(c.lookup(fp, "hash-A", 60_000)).not.toBeNull();
     expect(c.lookup(fp, "hash-B", 60_000)).toBeNull();
+  });
+
+  test("stores optional lossy/tee metadata", () => {
+    const c = new SessionCache();
+    const fp = c.fingerprint("mcp", { id: "x" });
+    c.put(fp, "hash-A", "compressed-A", {
+      lossy: true,
+      teeFile: "/tmp/.opencode/qtk-tee/call.log",
+    });
+
+    const entry = c.lookup(fp, "hash-A", 60_000);
+    expect(entry?.lossy).toBe(true);
+    expect(entry?.teeFile).toBe("/tmp/.opencode/qtk-tee/call.log");
   });
 
   test("LRU prunes when over capacity", () => {

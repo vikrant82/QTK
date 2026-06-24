@@ -8,14 +8,14 @@
 >
 > [**RTK (Rust Token Killer)**](https://github.com/rtk-ai/rtk) is the
 > mature, production-grade project for deterministic token compression.
-> 54k+ GitHub stars, 185 releases, supports 13 AI coding tools across
-> Linux/macOS/Windows, ships a 100+ command filter corpus. Built by
+> 65k+ GitHub stars, 200+ releases, supports 14 AI coding tools across
+> Linux/macOS/Windows, ships 100+ supported command filters. Built by
 > Patrick Szymkowiak, Florian Bruniaux, Adrien Eppling and the RTK
 > community. Licensed Apache-2.0.
 >
 > **If you're using Claude Code, Cursor, Gemini CLI, GitHub Copilot,
-> Codex, Windsurf, Cline, Roo Code, OpenClaw, Hermes, Kilo Code, or
-> Google Antigravity — use [RTK](https://rtk-ai.app).**
+> Codex, Windsurf, Cline, Roo Code, OpenCode, OpenClaw, Pi, Hermes,
+> Kilo Code, or Google Antigravity — use [RTK](https://rtk-ai.app).**
 >
 > **QTK is a narrow opencode-specific spiritual sibling.** It exists
 > because opencode's plugin surface lets us hook `tool.execute.after`
@@ -28,19 +28,23 @@
 > for the architectural diff.
 
 QTK is an [opencode](https://github.com/sst/opencode) plugin that silently
-compresses tool outputs (`git status`, `ls -la`, `rg`, `pytest`, `cargo test`,
-`Read`/`Grep`/`Glob`, `kubectl get -o yaml`, `terraform plan`, JUnit XML, …)
-**before they reach the model's context window**. No LLM. No prompt
-injection. ~99% reduction on the worst offenders, sub-millisecond p99
-latency, zero changes to how you use opencode.
+compresses matching tool outputs (`git status`, `ls -la`, `rg`, `pytest`,
+`cargo test`, `Read`/`Grep`/`Glob`, and optional sidecar-handled outputs such
+as `kubectl get -o yaml`, `terraform plan`, and JUnit XML) **before they reach
+the model's context window**. No LLM. No prompt injection. ~99% reduction on
+the worst offenders, sub-millisecond p99 latency, zero changes to how you use
+opencode.
 
 <!-- TODO: insert a screenshot of the qtk gain output once we have a real session -->
 
 ```
-QTK active — 13 compressors registered
-  read-tool, grep-tool, glob-tool, git-status, git-log, ls, rg, pytest, cargo,
-  sidecar:terraform-plan, sidecar:kubectl-structured, sidecar:cargo-json,
-  sidecar:junit-xml
+[qtk] sidecar: qtk-core binary not found; using TS-only
+[qtk] active — 12 compressors registered
+[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, find, rg, package-manager, pytest, cargo, generic-text
+
+# If qtk-core is installed, QTK also enables 4 async sidecar compressors:
+# sidecar:terraform-plan, sidecar:kubectl-structured,
+# sidecar:cargo-json, sidecar:junit-xml
 
 $ qtk gain
 ────────────────────────────────────────────────────────────────
@@ -56,10 +60,24 @@ Cost saved (est): $2.93
 
 By compressor:
   name              calls    bytes-in   bytes-out  tok-saved   USD-saved  avg-ratio
-  read-tool           283       1.2M       312k       217k      $0.65     26.5%
+  tool-read           283       1.2M       312k       217k      $0.65     26.5%
   sidecar:kubectl-st   34       421k        94k        82k      $0.25     22.3%
   git-status          147       294k        58k        59k      $0.18     19.7%
   ...
+
+By tool:
+  bash                314       1.0M       312k       172k      $0.52     31.0%
+  read                283       1.2M       312k       217k      $0.65     26.5%
+  task                 18       210k        89k        30k      $0.09     42.3%
+
+By source:
+  builtin             402       1.5M       420k       270k      $0.81     28.0%
+  tool                501       1.8M       510k       320k      $0.96     28.3%
+  generic              18       210k        89k        30k      $0.09     42.3%
+
+By result shape:
+  output             4854       5.0M       1.2M       955k      $2.86     25.0%
+  mcp_text_content     18       210k        89k        30k      $0.09     42.3%
 
 Top 10 commands by tokens saved:
   command                            calls  tok-saved   USD-saved  avg-ratio
@@ -74,7 +92,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
-[![tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](#tests)
+[![tests](https://img.shields.io/badge/tests-182%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![downstream of](https://img.shields.io/badge/downstream%20of-RTK-orange)](https://github.com/rtk-ai/rtk)
@@ -90,7 +108,7 @@ mechanically-compressible tool output:
 - `ls -la` columns of `drwxr-xr-x 5 user group 4096 May 20 14:23 ...`
 - `rg <pattern>` repeated `path:line:match` clusters
 - `cargo test` "Compiling N crates" verbosity
-- `npm install` progress bars and "added 412 packages" trees
+- package-manager progress bars and dependency trees
 - `kubectl get pods -o yaml` (multi-KB per pod, mostly `managedFields`)
 - `terraform plan` showing 50 resources where 3 changed
 
@@ -98,13 +116,14 @@ mechanically-compressible tool output:
 hand-written parsers reduce these outputs by 60–99% with zero quality loss
 for the model.
 
-[RTK](https://github.com/rtk-ai/rtk) proved the thesis at scale with a
-100+ filter corpus. QTK is the in-agent version of the same idea:
+[RTK](https://github.com/rtk-ai/rtk) proved the thesis at scale with
+100+ supported commands. QTK is the in-agent version of the same idea:
 
 | | RTK | QTK |
 |---|---|---|
 | **Where it lives** | External CLI binary | opencode plugin (in-process) |
-| **Tools covered** | `Bash` only | `Bash` + `Read` + `Grep` + `Glob` + MCP |
+| **Hook surface** | Shell command wrapping | opencode `tool.execute.after` for model-executed tools |
+| **Default compressors** | Bash command filters | Bash command outputs + `Read`/`Grep`/`Glob`; MCP text results can now be mutated safely, with generic MCP compressors planned next |
 | **Integration cost** | Hundreds of tokens in CLAUDE.md so the model knows to call `rtk <cmd>` | Zero — the model is unaware QTK exists |
 | **Per-call overhead** | Subprocess fork per bash invocation (5–15 ms) | In-process TS (median 30µs) |
 | **Heavy parsers** | Same Rust binary as everything | Optional `qtk-core` sidecar, fires only for XML/YAML/JSON |
@@ -155,30 +174,39 @@ Throughput (concurrent batches of 50):
 
 ## What QTK does, in 60 seconds
 
-1. **opencode** runs a tool (e.g. `Bash("git status")`) and gets raw output back.
-2. The `tool.execute.after` hook fires. QTK intercepts.
-3. QTK looks up a matching compressor:
-   - First: 4 async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
+1. **opencode** prepares a model-executed tool call. QTK's optional
+   `tool.execute.before` hook applies only whitelist-safe Bash rewrites such as
+   `pytest -q`, `cargo --quiet`, `npm install --silent`, or Gradle `--quiet --console=plain`; verbosity/debug
+   flags opt out.
+2. **opencode** runs the tool (e.g. `Bash("git status")`) and gets raw output back.
+3. The `tool.execute.after` hook fires. QTK can inspect and rewrite normal
+   opencode `output` strings and MCP text-content results before opencode
+   flattens them for the model.
+4. QTK looks up a matching compressor:
+   - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
-   - Then: the **9 built-in TS compressors** (`git-status`, `git-log`, `ls`, `rg`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
-4. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
-5. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
-6. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
+   - Then: the **11 specific registered TS compressors** (`git-status`, `git-log`, `ls`, `find`, `rg`, `package-manager`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
+   - Last: `generic-text`, a conservative lossy fallback for recognizable MCP/task text shapes (path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs). Generic compression requires a raw tee file and is marked `lossy=true`.
+5. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
+6. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
+7. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
 
-**The model never knows QTK exists.** No CLAUDE.md injection. No command rewriting. No special tool wrappers.
+**The model never knows QTK exists.** No CLAUDE.md injection. No special tool wrappers. Pre-call command rewriting is whitelist-only and can be disabled with `QTK_REWRITE_DISABLED=1` or globally with `QTK_DISABLED=1`.
 
 ---
 
 ## What's in here
 
-### Phase 1: 9 built-in TypeScript compressors
+### Phase 1/4: 12 registered TypeScript compressors
 
 Hand-written, sub-100µs median latency:
 
 - **`git status`** — porcelain → `branch=main (up to date with origin/main)\nstaged (3): modified foo.ts, modified bar.ts, new baz.ts\nunstaged (1): modified qux.ts`
 - **`git log`** — multi-line commits → one-liners with `<hash> <date> <author>: <subject>`
 - **`ls -la`** — long-format → sorted by type with size/mtime; falls back to grouped-by-extension for large flat listings
+- **`find` / `fd`** — one-path-per-line results → grouped by containing directory
 - **`rg`** / **`grep -r`** — `5 matches across 3 files:\n  src/foo.ts (3 matches)\n  L17: ...`
+- **`npm` / `pnpm` / `bun` / `yarn`** — strips install/run progress, lifecycle echoes, and dependency-tree noise
 - **`pytest`** — passing → just the summary; failing → keeps FAILED lines + first 8 trace lines
 - **`cargo test`/`cargo build`/`cargo clippy`** — strips Compiling-noise, keeps errors
 - **`Read` tool** — > 200 lines → signature outline (imports, function/class/interface/export lines)
@@ -304,7 +332,7 @@ every 10 seconds. The file looks like:
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "ts": 1716700000000,
   "session_id": "...",
   "totals": {
@@ -316,7 +344,7 @@ every 10 seconds. The file looks like:
     "pricing": {"inputUsdPer1M": 3.0, "outputUsdPer1M": 15.0}
   },
   "by_compressor": [
-    {"name": "read-tool", "calls": 283, "tokens_saved": 217000, "bytes_saved": 1234567},
+    {"name": "tool-read", "calls": 283, "tokens_saved": 217000, "bytes_saved": 1234567},
     ...
   ]
 }
@@ -352,7 +380,7 @@ bun run packages/qtk-plugin/src/cli/gain.ts
 #   tokens saved:     805,719 (-71.4%)
 #
 # Top 10 commands by tokens saved:
-#   read-tool                    283   1.2M    312k   847k saved (-73%)
+#   tool-read                    283   1.2M    312k   847k saved (-73%)
 #   git-status                   147   294k     58k   234k saved (-79%)
 #   sidecar:kubectl-structured    34   421k     94k   327k saved (-77%)
 #   ...
@@ -385,8 +413,8 @@ opencode process
       │     ├─ Hot-reloaded on file change (250ms debounce)
       │     └─ Pipeline: strip → dedupe → match → group_by → template → truncate
       ├─ Built-in TS compressors (Phase 1)
-      │     git-status, git-log, ls, rg, pytest, cargo,
-      │     read-tool, grep-tool, glob-tool
+      │     git-status, git-log, ls, find, rg, package-manager, pytest, cargo,
+      │     tool-read, tool-grep, tool-glob
       ├─ Tee writer (.opencode/qtk-tee/<call-id>.log, 0o600)
       ├─ SQLite stats (.opencode/qtk-stats.sqlite)
       └─ Circuit breaker (auto-disables flaky compressor after 3 failures)
@@ -394,7 +422,9 @@ opencode process
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design,
 [`docs/RTK-COMPARISON.md`](docs/RTK-COMPARISON.md) for the detailed RTK
-side-by-side, [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model.
+side-by-side, [`docs/RTK-PARITY-MATRIX.md`](docs/RTK-PARITY-MATRIX.md) for the
+coverage roadmap, and [`docs/SECURITY.md`](docs/SECURITY.md) for the threat
+model.
 
 ---
 
@@ -416,12 +446,12 @@ QTK/
 │   ├── qtk-plugin/                 ← Phase 1+2+3 TS plugin (73 KB bundle)
 │   │   ├── src/
 │   │   │   ├── index.ts            ← tool.execute.after hook
-│   │   │   ├── compressors/        ← 9 hand-written compressors
+│   │   │   ├── compressors/        ← hand-written Bash command compressors
 │   │   │   ├── tools/              ← built-in tool compressors
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 89 TS tests
+│   │   └── test/                   ← 160 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -442,16 +472,16 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 89 TS tests
+bun test                          # 160 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 111 passing, 0 failing
+# total: 182 passing, 0 failing
 ```
 
 Coverage:
 
 | Area                         | Tests | Notes                                                   |
 | ---------------------------- | ----- | ------------------------------------------------------- |
-| Phase 1 compressors          | 28    | All 9 compressors, golden fixtures, adversarial inputs  |
+| Phase 1/4 compressors        | 52    | Command/tool/generic compressors, fixtures, adversarial inputs |
 | Session cache                | 3     | Fingerprint stability, hash check, LRU pruning          |
 | Circuit breaker              | 2     | 3-strike disable, per-compressor isolation              |
 | Tee secret redaction         | 4     | AWS, GitHub PAT, Bearer, benign-passthrough             |
