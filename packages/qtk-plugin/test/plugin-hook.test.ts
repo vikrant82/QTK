@@ -128,7 +128,7 @@ describe("opencode tool hook compatibility", () => {
     const output = { content: [{ type: "text", text: raw }], metadata: {} };
 
     await _internal.processCall(
-      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      { tool: "serena_get_diagnostics_for_file", sessionID: "session-test", callID: "call-test" },
       output,
       processContext(),
     );
@@ -144,7 +144,7 @@ describe("opencode tool hook compatibility", () => {
     const output = { content: [{ type: "text", text: raw }], metadata: {} };
 
     await _internal.processCall(
-      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      { tool: "serena_get_diagnostics_for_file", sessionID: "session-test", callID: "call-test" },
       output,
       {
         ...processContext(),
@@ -174,14 +174,14 @@ describe("opencode tool hook compatibility", () => {
     };
 
     await _internal.processCall(
-      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      { tool: "serena_get_diagnostics_for_file", sessionID: "session-test", callID: "call-test" },
       { content: [{ type: "text", text: raw }], metadata: {} },
       ctx,
     );
 
     const repeat = { content: [{ type: "text", text: raw }], metadata: {} };
     await _internal.processCall(
-      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      { tool: "serena_get_diagnostics_for_file", sessionID: "session-test", callID: "call-test" },
       repeat,
       { ...ctx, tee: null },
     );
