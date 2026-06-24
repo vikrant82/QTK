@@ -32,6 +32,7 @@ import {
   type AsyncCompressor,
 } from "./sidecar/compressors.ts";
 import { SavingsExporter } from "./savings-export.ts";
+import { extractResultText } from "./result-text.ts";
 import type { CompressionOutcome } from "./types.ts";
 
 export const QtkPlugin: Plugin = async ({ directory }) => {
@@ -213,7 +214,8 @@ interface HookInput {
 }
 
 interface HookOutput {
-  output: string;
+  output?: string;
+  content?: unknown;
   title?: string;
   metadata?: Record<string, unknown>;
 }
@@ -223,8 +225,9 @@ async function processCall(
   output: HookOutput,
   ctx: ProcessContext,
 ): Promise<void> {
-  if (typeof output.output !== "string" || !output.output) return;
-  const raw = output.output;
+  const target = extractResultText(output);
+  if (!target || !target.text) return;
+  const raw = target.text;
   if (raw.length < 200) return; // small outputs not worth compressing
 
   const args = extractHookArgs(input, output);
@@ -243,14 +246,15 @@ async function processCall(
   const cacheHit = ctx.cache.lookup(fp, outHash, ctx.dedupTtlMs);
   if (cacheHit) {
     const elapsed = Math.round((Date.now() - cacheHit.ts) / 1000);
-    output.output = `<qtk-unchanged tool=${input.tool} since=${elapsed}s_ago>\n${cacheHit.compressed}\n</qtk-unchanged>`;
+    const cachedOutput = `<qtk-unchanged tool=${input.tool} since=${elapsed}s_ago>\n${cacheHit.compressed}\n</qtk-unchanged>`;
+    target.write(cachedOutput);
     const cacheOutcome: CompressionOutcome = {
       compressor: "session-cache",
       originalBytes: raw.length,
-      compressedBytes: output.output.length,
+      compressedBytes: cachedOutput.length,
       originalTokensEst: estimateTokens(raw),
-      compressedTokensEst: estimateTokens(output.output),
-      ratio: output.output.length / raw.length,
+      compressedTokensEst: estimateTokens(cachedOutput),
+      ratio: cachedOutput.length / raw.length,
       durationMs: 0,
       wasCacheHit: true,
       teeFile: null,
@@ -362,7 +366,8 @@ async function processCall(
     (teeFile ? ` tee=${pathToRelative(teeFile, ctx.projectRoot)}` : "") +
     `>`;
 
-  output.output = `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
+  const compressedOutput = `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
+  target.write(compressedOutput);
 
   // Cache the (raw) hash + the compressed body, so repeats short-circuit
   ctx.cache.put(fp, outHash, compressed);
@@ -371,9 +376,9 @@ async function processCall(
   const outcome: CompressionOutcome = {
     compressor: compressorName,
     originalBytes: raw.length,
-    compressedBytes: output.output.length,
+    compressedBytes: compressedOutput.length,
     originalTokensEst: estimateTokens(raw),
-    compressedTokensEst: estimateTokens(output.output),
+    compressedTokensEst: estimateTokens(compressedOutput),
     ratio,
     durationMs,
     wasCacheHit: false,

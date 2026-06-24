@@ -21,7 +21,7 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 
 | Family | RTK coverage examples | QTK status | Planned mechanism | Priority |
 | --- | --- | --- | --- | --- |
-| Native opencode tools | RTK does not auto-compress `Read`/`Grep`/`Glob` via OpenCode rewrite | `Read`, `Grep`, `Glob` active TS | Extend result normalizer to MCP text | High |
+| Native opencode tools | RTK does not auto-compress `Read`/`Grep`/`Glob` via OpenCode rewrite | `Read`, `Grep`, `Glob` active TS; MCP text result mutation supported | Add generic MCP/result-shape compressors | High |
 | File listing/search | `ls`, `tree`, `find`, `cat`, `head`, `tail`, `rg`, `grep`, `diff`, `wc` | `ls`, `find`/`fd`, `rg` active TS; `diff` planned | TS or sidecar for large diffs | High |
 | Git | `git status`, `log`, `diff`, `show`, `add`, `commit`, `push`, `pull` | `git status`, `git log` active TS | TS/DSL for `diff`, `show`, compact state-changing commands | High |
 | GitHub/GitLab CLI | `gh pr/issue/run/repo/api`, `glab` | Planned | TS table/JSON summarizers or bundled filters | Medium |
@@ -48,8 +48,9 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 3. **Generic postprocessors** — ANSI strip, log entropy normalization, repeated
    line dedupe, path/table grouping, long-line truncation, JSON schema summary,
    and failure/error extraction.
-4. **All-tool result normalization** — support MCP text content and any other
-   opencode result shape that can be mutated safely.
+4. **All-tool result normalization** — partially done: normal output strings
+   and MCP text content can be mutated safely; next add generic compressors for
+   MCP/task text outputs.
 5. **Safe pre-call optimizations** — whitelist-only quiet flag rewrites with
    `QTK_DISABLED=1` escape hatch.
 6. **Model-facing secret redaction** — redact compressed and pass-through output

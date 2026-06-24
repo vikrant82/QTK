@@ -34,13 +34,14 @@ toModelOutput(result) {
 ```
 
 `Plugin.trigger` walks the registered plugins in order and calls each hook
-function with the **mutable** `result` object. **Any plugin can mutate
-`result.output`** and the change flows directly into `toModelOutput()`.
+function with the **mutable** `result` object. QTK registers a
+`tool.execute.after` hook and rewrites compressible text in place.
 
-QTK registers a `tool.execute.after` hook and rewrites `result.output` in place.
-Current MCP tools also trigger the hook, but their result can arrive before
-opencode flattens MCP content into the normal `{ output: string }` shape; QTK
-currently passes those through unless a normal string output is present.
+For normal opencode tools, that text lives at `result.output`. For MCP tools,
+the hook sees raw `content` items before opencode flattens them into
+`result.output`; QTK normalizes those text content/resource entries and writes
+the compressed envelope back to the same result shape.
+
 User-triggered TUI shell commands (`!cmd`) use a separate opencode path and do
 not appear to trigger `tool.execute.after` today.
 
@@ -73,6 +74,7 @@ qtk-plugin/
                                    orig_bytes, comp_bytes, ratio, ...)
 
     estimator.ts       ← token estimator (chars/4, matches opencode's)
+    result-text.ts     ← extracts/mutates normal output and MCP text content
 
     compressors/       ← per-command compressors
       git.ts             git status / log (2 distinct compressors)
