@@ -14,10 +14,10 @@ RTK filter import script, and all docs) lives at:
   **https://github.com/qalarc/QTK**
 
 If you're not using opencode specifically, you almost certainly want
-[RTK](https://github.com/rtk-ai/rtk) instead — RTK supports 13 AI
+[RTK](https://github.com/rtk-ai/rtk) instead — RTK supports 14 AI
 coding tools (Claude Code, Cursor, Gemini CLI, Copilot, OpenCode,
-Codex, Windsurf, Cline, Roo Code, OpenClaw, Hermes, Kilo Code, and
-Google Antigravity) and ships a 100+ filter corpus.
+Codex, Windsurf, Cline, Roo Code, OpenClaw, Pi, Hermes, Kilo Code, and
+Google Antigravity) and ships 100+ supported command filters.
 
 ## Install
 
@@ -42,7 +42,7 @@ Restart opencode. You should see `[qtk] active — N compressors registered`.
 
 QTK hooks `tool.execute.after` in opencode and silently rewrites tool
 outputs to a compact form before the model sees them. Typical
-compression: 60-99% reduction on `git status`, `ls -la`, `rg`,
+compression: 60-99% reduction on `git status`, `git log`, `ls -la`, `rg`,
 `pytest`, `cargo`, `Read`, `Grep`, `Glob` tool calls.
 
 For per-project custom compressors, drop TOML files into

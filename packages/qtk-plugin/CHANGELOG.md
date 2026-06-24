@@ -66,9 +66,9 @@ Initial public release on [github.com/qalarc/QTK](https://github.com/qalarc/QTK)
 - `rg` / `grep -r` (multi-file results → grouped by file with top matches)
 - `pytest` (passing → summary; failing → FAILED + trace heads)
 - `cargo build/test/clippy` (Compiling-noise stripped, errors preserved)
-- `read-tool` (>200 line files → signature outline)
-- `grep-tool` (multi-file results → grouped)
-- `glob-tool` (>30 paths → clustered by 2-deep dir prefix)
+- `tool-read` (>200 line files → signature outline)
+- `tool-grep` (multi-file results → grouped)
+- `tool-glob` (>30 paths → clustered by 2-deep dir prefix)
 
 Infrastructure:
 
