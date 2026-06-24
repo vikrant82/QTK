@@ -169,7 +169,10 @@ interface ProcessContext {
   breaker: CircuitBreaker;
   tee: TeeWriter | null;
   stats: StatsTracker | null;
-  savingsExporter: SavingsExporter;
+  savingsExporter: Pick<
+    SavingsExporter,
+    "record" | "setModelId" | "setSessionId"
+  >;
   dedupTtlMs: number;
   teeMode: "always" | "failures_and_compressed" | "never";
 }
@@ -178,6 +181,7 @@ interface HookInput {
   tool: string;
   sessionID: string;
   callID: string;
+  args?: unknown;
 }
 
 interface HookOutput {
@@ -195,16 +199,15 @@ async function processCall(
   const raw = output.output;
   if (raw.length < 200) return; // small outputs not worth compressing
 
-  // Pull `args` from metadata if present, otherwise empty
-  const args = (output.metadata?.args as Record<string, unknown>) ?? {};
+  const args = extractHookArgs(input, output);
 
   // Compute fingerprint and output hash
   const fp = ctx.cache.fingerprint(input.tool, args);
   const outHash = ctx.cache.outputHash(raw);
 
-  // Learn the session id from the first hook call (used by the savings exporter)
-  // Best-effort — if input.sessionID isn't set, we just skip.
+  // Learn metadata from the hook input/output as it becomes available.
   if (input.sessionID) {
+    ctx.savingsExporter.setSessionId(input.sessionID);
     ctx.savingsExporter.setModelId(extractModelId(output));
   }
 
@@ -369,6 +372,19 @@ function extractCommandHead(
   return tool.toLowerCase();
 }
 
+function extractHookArgs(
+  input: HookInput,
+  output: HookOutput,
+): Record<string, unknown> {
+  if (isRecord(input.args)) return input.args;
+  if (isRecord(output.metadata?.args)) return output.metadata.args;
+  return {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 /**
  * Try to read the model id from opencode's tool-call output metadata.
  * opencode plugins receive an `output.metadata` field which sometimes
@@ -391,6 +407,8 @@ function pathToRelative(abs: string, root: string): string {
   if (abs.startsWith(r + "/")) return abs.slice(r.length + 1);
   return abs;
 }
+
+export const _internal = { extractHookArgs, processCall };
 
 // Default export for opencode plugin loader convention
 export default QtkPlugin;
