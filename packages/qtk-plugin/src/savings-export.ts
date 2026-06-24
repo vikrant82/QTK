@@ -40,7 +40,7 @@ import type { CompressionOutcome } from "./types.ts";
 import { aggregateSavings, type ModelPricing } from "./pricing.ts";
 
 export const SAVINGS_FILE_REL = ".opencode/qtk-savings.json";
-export const SAVINGS_SCHEMA_VERSION = 1;
+export const SAVINGS_SCHEMA_VERSION = 2;
 
 interface PerCompressorRunningTotals {
   calls: number;
@@ -49,6 +49,19 @@ interface PerCompressorRunningTotals {
   tokensIn: number;
   tokensOut: number;
 }
+
+interface SavingsRecordMetadata {
+  readonly tool?: string;
+  readonly compressorSource?: string;
+  readonly resultShape?: string;
+}
+
+type NamedSavings = {
+  name: string;
+  calls: number;
+  tokens_saved: number;
+  bytes_saved: number;
+};
 
 export interface SavingsSnapshot {
   schema: number;
@@ -67,12 +80,10 @@ export interface SavingsSnapshot {
     model: string;
     pricing: ModelPricing;
   };
-  by_compressor: Array<{
-    name: string;
-    calls: number;
-    tokens_saved: number;
-    bytes_saved: number;
-  }>;
+  by_compressor: NamedSavings[];
+  by_tool: NamedSavings[];
+  by_source: NamedSavings[];
+  by_result_shape: NamedSavings[];
   last_compression_ts: number;
 }
 
@@ -94,6 +105,9 @@ export class SavingsExporter {
   private lastCompressionTs = 0;
   private modelId: string | null = null;
   private readonly perCompressor = new Map<string, PerCompressorRunningTotals>();
+  private readonly perTool = new Map<string, PerCompressorRunningTotals>();
+  private readonly perSource = new Map<string, PerCompressorRunningTotals>();
+  private readonly perResultShape = new Map<string, PerCompressorRunningTotals>();
 
   // Debounced flush
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -129,7 +143,7 @@ export class SavingsExporter {
   }
 
   /** Record one compression outcome. Fast in-memory accumulation only. */
-  record(outcome: CompressionOutcome): void {
+  record(outcome: CompressionOutcome, metadata: SavingsRecordMetadata = {}): void {
     if (this.stopped) return;
     this.calls += 1;
     this.bytesIn += outcome.originalBytes;
@@ -138,19 +152,18 @@ export class SavingsExporter {
     this.tokensOut += outcome.compressedTokensEst;
     this.lastCompressionTs = Date.now();
 
-    const entry = this.perCompressor.get(outcome.compressor) ?? {
-      calls: 0,
-      bytesIn: 0,
-      bytesOut: 0,
-      tokensIn: 0,
-      tokensOut: 0,
-    };
-    entry.calls += 1;
-    entry.bytesIn += outcome.originalBytes;
-    entry.bytesOut += outcome.compressedBytes;
-    entry.tokensIn += outcome.originalTokensEst;
-    entry.tokensOut += outcome.compressedTokensEst;
-    this.perCompressor.set(outcome.compressor, entry);
+    addTotals(this.perCompressor, outcome.compressor, outcome);
+    addTotals(this.perTool, metadata.tool ?? "unknown", outcome);
+    addTotals(
+      this.perSource,
+      metadata.compressorSource ?? outcome.compressorSource ?? "builtin",
+      outcome,
+    );
+    addTotals(
+      this.perResultShape,
+      metadata.resultShape ?? outcome.resultShape ?? "output",
+      outcome,
+    );
 
     this.scheduleFlush();
   }
@@ -185,14 +198,7 @@ export class SavingsExporter {
     }));
     const agg = aggregateSavings(rows, this.modelId);
 
-    const byCompressor = Array.from(this.perCompressor.entries())
-      .map(([name, v]) => ({
-        name,
-        calls: v.calls,
-        tokens_saved: Math.max(0, v.tokensIn - v.tokensOut),
-        bytes_saved: Math.max(0, v.bytesIn - v.bytesOut),
-      }))
-      .sort((a, b) => b.tokens_saved - a.tokens_saved);
+    const byCompressor = groupSnapshot(this.perCompressor);
 
     return {
       schema: SAVINGS_SCHEMA_VERSION,
@@ -212,6 +218,9 @@ export class SavingsExporter {
         pricing: agg.pricing,
       },
       by_compressor: byCompressor,
+      by_tool: groupSnapshot(this.perTool),
+      by_source: groupSnapshot(this.perSource),
+      by_result_shape: groupSnapshot(this.perResultShape),
       last_compression_ts: this.lastCompressionTs,
     };
   }
@@ -243,4 +252,35 @@ export class SavingsExporter {
       console.warn(`[qtk] savings-export: flush failed: ${(e as Error).message}`);
     }
   }
+}
+
+function addTotals(
+  map: Map<string, PerCompressorRunningTotals>,
+  name: string,
+  outcome: CompressionOutcome,
+): void {
+  const entry = map.get(name) ?? {
+      calls: 0,
+      bytesIn: 0,
+      bytesOut: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+    };
+  entry.calls += 1;
+  entry.bytesIn += outcome.originalBytes;
+  entry.bytesOut += outcome.compressedBytes;
+  entry.tokensIn += outcome.originalTokensEst;
+  entry.tokensOut += outcome.compressedTokensEst;
+  map.set(name, entry);
+}
+
+function groupSnapshot(map: Map<string, PerCompressorRunningTotals>): NamedSavings[] {
+  return Array.from(map.entries())
+    .map(([name, v]) => ({
+      name,
+      calls: v.calls,
+      tokens_saved: Math.max(0, v.tokensIn - v.tokensOut),
+      bytes_saved: Math.max(0, v.bytesIn - v.bytesOut),
+    }))
+    .sort((a, b) => b.tokens_saved - a.tokens_saved);
 }

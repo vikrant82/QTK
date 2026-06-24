@@ -12,6 +12,8 @@ export interface CacheEntry {
   outputHash: string;
   compressed: string;
   ts: number;
+  lossy?: boolean;
+  teeFile?: string | null;
 }
 
 const MAX_ENTRIES = 500;
@@ -47,8 +49,19 @@ export class SessionCache {
     return e;
   }
 
-  put(fp: string, outputHash: string, compressed: string) {
-    this.entries.set(fp, { outputHash, compressed, ts: Date.now() });
+  put(
+    fp: string,
+    outputHash: string,
+    compressed: string,
+    metadata: Pick<CacheEntry, "lossy" | "teeFile"> = {},
+  ) {
+    this.entries.set(fp, {
+      outputHash,
+      compressed,
+      ts: Date.now(),
+      lossy: metadata.lossy,
+      teeFile: metadata.teeFile,
+    });
     if (this.entries.size > MAX_ENTRIES) this.prune();
   }
 

@@ -18,13 +18,14 @@
   },
   "files": [
     "dist",
+    "filters",
     "src",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun run ../../scripts/copy-bundled-filters.ts && bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",
     "prepublishOnly": "bun run build && bun test"

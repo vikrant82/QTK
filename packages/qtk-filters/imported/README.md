@@ -14,16 +14,17 @@ turbo, ty, uv-sync, vagrant, vault, vercel, xcodebuild, yadm, yamllint,
 ytt-deps.
 
 **You do not need to do anything to use these filters.** They've been
-translated to QTK's TOML DSL format and ship as part of the QTK repo.
-To activate one, copy it into your opencode project's
-`.opencode/qtk/filters/` directory:
+translated to QTK's TOML DSL format, copied into the plugin package at build
+time, and loaded by default. To disable bundled filters:
 
-```bash
-cp packages/qtk-filters/imported/helm.toml /path/to/your/opencode-project/.opencode/qtk/filters/
+```toml
+[qtk.filters]
+bundled = false
 ```
 
-The plugin reloads on file change (250 ms debounce); the next `helm`
-invocation will use the filter.
+To override a bundled filter, copy it into your opencode project's
+`.opencode/qtk/filters/` directory and edit it there. Project-local filters
+take precedence and reload on file change (250 ms debounce).
 
 ## What got translated
 

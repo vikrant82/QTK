@@ -8,7 +8,7 @@
 | Phase | Description                                                          | Status        |
 | ----- | -------------------------------------------------------------------- | ------------- |
 | 0     | Repo bootstrap                                                       | ✅ done       |
-| 1     | TS-only MVP plugin (9 compressors)                                   | ✅ done       |
+| 1     | TS-only MVP plugin (12 compressors, including generic-text fallback) | ✅ done       |
 | 2     | TOML filter DSL + RTK filter corpus bulk-imported (59/59)            | ✅ done       |
 | 3     | Rust sidecar (`qtk-core`) for heavy parsers                          | ✅ done       |
 | —     | Public release (github.com/qalarc/QTK + qalarc.com + blog)           | ✅ done       |
@@ -22,6 +22,7 @@
 | —     | npm publish under @qalarc scope                                      | 🟡 queued    |
 | —     | RTK community outreach (draft in docs/RTK-OUTREACH-DRAFT.md)         | 🟡 queued    |
 | —     | v0.3.1 tag to exercise the release pipeline                          | 🟡 queued    |
+| —     | RTK parity roadmap (docs/RTK-PARITY-MATRIX.md)                       | 🟡 active    |
 
 ---
 
@@ -38,10 +39,12 @@
 Working `qtk-plugin` that:
 
 - Hooks `tool.execute.after` and compresses outputs
-- Ships **9 production-quality compressors**:
+- Ships **11 production-quality compressors**:
   - `git status`, `git log`
   - `ls -la`
+  - `find` / `fd`
   - `rg <pattern>` / `grep -r`
+  - `npm` / `pnpm` / `bun` / `yarn` output
   - `cargo test` failures-only
   - `pytest` failures-only
   - **`Read` tool** (200+ line files → outline)
@@ -57,12 +60,12 @@ Working `qtk-plugin` that:
 
 - [x] `packages/qtk-plugin/src/index.ts` — plugin entry point
 - [x] `packages/qtk-plugin/src/{types,registry,config,cache,tee,stats,estimator,circuit-breaker}.ts`
-- [x] `packages/qtk-plugin/src/compressors/{git,ls,rg,cargo,pytest}.ts`
+- [x] `packages/qtk-plugin/src/compressors/{git,ls,find,rg,package-manager,cargo,pytest}.ts`
 - [x] `packages/qtk-plugin/src/tools/{read,grep,glob}.ts`
-- [x] `packages/qtk-plugin/test/compressors.test.ts` — 40 tests, 92 assertions
+- [x] `packages/qtk-plugin/test/compressors.test.ts` — 61 compressor tests
 - [x] `scripts/install-into-opencode.ts` — symlink + jsonc edit + smoke test
 - [x] `scripts/benchmark.ts` — measure compression ratios and p50/p90/p99 latency
-- [x] `qtk gain` CLI — prints session-totals summary
+- [x] `qtk gain` CLI — prints session totals plus by-compressor/tool/source/result-shape summaries
 
 ### Acceptance criteria — met
 
@@ -87,7 +90,7 @@ Goal: let users add per-project compressors without writing TypeScript.
 - [x] `packages/qtk-plugin/src/dsl/parser.ts` — hand-written TOML parser
 - [x] `packages/qtk-plugin/src/dsl/spec.ts` — spec validator + regex compilation
 - [x] `packages/qtk-plugin/src/dsl/runtime.ts` — compileFilter(spec) → Compressor
-- [x] `packages/qtk-plugin/src/dsl/loader.ts` — scans `.opencode/qtk/filters/*.toml`
+- [x] `packages/qtk-plugin/src/dsl/loader.ts` — scans project filters and packaged imported filters
 - [x] `packages/qtk-plugin/src/dsl/watcher.ts` — hot-reload via fs.watch + 250 ms debounce
 - [x] Registry: `prepend()` + `replaceUserCompressors()` for DSL integration
 - [x] `scripts/import-rtk-filters.ts` — local-checkout import (no network code) with attribution
@@ -98,11 +101,15 @@ Goal: let users add per-project compressors without writing TypeScript.
 
 - ✅ A user can drop a new TOML file into `.opencode/qtk/filters/` and see the
   next matching tool call get compressed without restarting opencode
+- ✅ Packaged RTK-compatible filters load by default; project filters take
+  precedence and remain hot-reloaded
 - ✅ Invalid TOML files log a warning but don't break QTK
 - ✅ The DSL runtime achieves competitive performance — 98.2% reduction on
   `kubectl get pods` at p99 1.17 ms, same ballpark as hand-written TS
-- 🟡 RTK filter import: pipeline works; haven't yet bulk-imported the 50+
-  corpus (requires `git clone rtk-ai/rtk` + run script)
+- ✅ RTK filter import: 59 filters are imported under
+  `packages/qtk-filters/imported/`
+- ✅ Packaged imported filters are copied into the plugin package at build time
+  and loaded automatically unless `[qtk.filters].bundled = false`
 
 ---
 
@@ -373,7 +380,7 @@ Tracking design decisions and their justifications.
 
 | Date       | Decision                                                    | Justification                                                                                                |
 | ---------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 2026-05-20 | Compress on `tool.execute.after`, not `tool.execute.before` | See ARCHITECTURE.md §1 — output-side compression covers all tools, zero prompt overhead, no double-wrap risk |
+| 2026-05-20 | Compress on `tool.execute.after`; keep `tool.execute.before` whitelist-only | Output-side compression covers tool results; before-hook use is limited to safe quiet-flag rewrites |
 | 2026-05-20 | TypeScript Phase 1, Rust sidecar Phase 3                    | In-process JS wins on latency despite slower regex; Rust only for genuinely expensive parsers                |
 | 2026-05-20 | No network code, ever                                       | Strongest possible privacy story, removes entire class of risks                                              |
 | 2026-05-20 | Tee files 0o600, dir 0o700, no env override                 | Direct response to RTK audit findings §3.1 and §3.2                                                          |

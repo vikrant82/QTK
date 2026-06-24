@@ -18,7 +18,12 @@ import { StatsTracker, commandHead } from "./stats.ts";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 import { loadConfig } from "./config.ts";
 import { estimateTokens } from "./estimator.ts";
-import { loadFilters, DEFAULT_FILTER_DIR } from "./dsl/loader.ts";
+import {
+  loadFilters,
+  loadBundledFilters,
+  DEFAULT_FILTER_DIR,
+  type LoadResult,
+} from "./dsl/loader.ts";
 import { watchFilters } from "./dsl/watcher.ts";
 import { SidecarClient } from "./sidecar/client.ts";
 import { locateQtkCore } from "./sidecar/locator.ts";
@@ -27,10 +32,18 @@ import {
   type AsyncCompressor,
 } from "./sidecar/compressors.ts";
 import { SavingsExporter } from "./savings-export.ts";
+import { extractResultText } from "./result-text.ts";
+import { classifyCompressorSource, isGenericCompressor } from "./metrics.ts";
+import { isTruthyEnv, rewriteCommand } from "./rewrite.ts";
 import type { CompressionOutcome } from "./types.ts";
 
 export const QtkPlugin: Plugin = async ({ directory }) => {
   const projectRoot = directory ?? process.cwd();
+  if (isTruthyEnv(process.env.QTK_DISABLED)) {
+    console.log("[qtk] disabled via QTK_DISABLED");
+    return {};
+  }
+
   const config = await loadConfig(projectRoot);
 
   if (!config.enabled) {
@@ -42,10 +55,22 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   const cache = new SessionCache();
   const breaker = new CircuitBreaker();
 
-  // Load TOML DSL filters from .opencode/qtk/filters/*.toml — these run
-  // BEFORE built-in compressors (first-match wins) so users can override.
+  // Load TOML DSL filters. Project-local filters run before bundled filters,
+  // and bundled filters run before built-in compressors (first-match wins).
   try {
-    const { filters, errors } = await loadFilters(projectRoot);
+    let bundledResult: LoadResult = { filters: [], errors: [] };
+    let projectResult: LoadResult = { filters: [], errors: [] };
+
+    if (config.filters.bundled) {
+      bundledResult = await loadBundledFilters();
+    }
+    if (config.filters.project) {
+      projectResult = await loadFilters(projectRoot, DEFAULT_FILTER_DIR, {
+        namespace: "project",
+      });
+    }
+
+    const filters = [...projectResult.filters, ...bundledResult.filters];
     if (filters.length > 0) {
       registry.prepend(filters.map((f) => f.compressor));
       console.log(
@@ -54,22 +79,33 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
           .join(", ")}`,
       );
     }
-    for (const e of errors) {
+    for (const e of [...projectResult.errors, ...bundledResult.errors]) {
       console.warn(`[qtk] filter load failed: ${e.source}: ${e.error}`);
     }
 
-    // Hot-reload watcher — picks up new/edited/deleted filter files
-    // without a restart. Best-effort: a failed watcher just means no
-    // hot-reload; the loaded-at-startup set keeps working.
-    watchFilters(projectRoot, DEFAULT_FILTER_DIR, (result) => {
-      registry.replaceUserCompressors(result.filters.map((f) => f.compressor));
-      console.log(
-        `[qtk] hot-reload: ${result.filters.length} DSL filter(s) active`,
+    // Hot-reload watcher — picks up new/edited/deleted project filter files
+    // without a restart. Bundled filters are static for the session.
+    if (config.filters.project) {
+      watchFilters(
+        projectRoot,
+        DEFAULT_FILTER_DIR,
+        (result) => {
+          const projectFilters = result.filters.map((f) => f.compressor);
+          const bundledFilters = bundledResult.filters.map((f) => f.compressor);
+          registry.replaceUserCompressors([
+            ...projectFilters,
+            ...bundledFilters,
+          ]);
+          console.log(
+            `[qtk] hot-reload: ${result.filters.length} project DSL filter(s) active`,
+          );
+          for (const e of result.errors) {
+            console.warn(`[qtk] filter load failed: ${e.source}: ${e.error}`);
+          }
+        },
+        { namespace: "project" },
       );
-      for (const e of result.errors) {
-        console.warn(`[qtk] filter load failed: ${e.source}: ${e.error}`);
-      }
-    });
+    }
   } catch (e) {
     console.warn("[qtk] filter loader failed:", e);
   }
@@ -139,6 +175,27 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   });
 
   return {
+    "tool.execute.before": async (input, output) => {
+      try {
+        if (
+          isTruthyEnv(process.env.QTK_DISABLED) ||
+          isTruthyEnv(process.env.QTK_REWRITE_DISABLED)
+        ) {
+          return;
+        }
+        if (input.tool.toLowerCase() !== "bash") return;
+        if (!isRecord(output.args) || typeof output.args.command !== "string") {
+          return;
+        }
+        const rewritten = rewriteCommand(output.args.command);
+        if (!rewritten) return;
+        output.args.command = rewritten.command;
+        console.log(`[qtk] rewrite ${rewritten.rule}: ${rewritten.command}`);
+      } catch (e) {
+        console.warn("[qtk] tool.execute.before failed:", e);
+      }
+    },
+
     "tool.execute.after": async (input, output) => {
       // Defensive: never throw out of this hook.
       try {
@@ -185,7 +242,8 @@ interface HookInput {
 }
 
 interface HookOutput {
-  output: string;
+  output?: string;
+  content?: unknown;
   title?: string;
   metadata?: Record<string, unknown>;
 }
@@ -195,8 +253,9 @@ async function processCall(
   output: HookOutput,
   ctx: ProcessContext,
 ): Promise<void> {
-  if (typeof output.output !== "string" || !output.output) return;
-  const raw = output.output;
+  const target = extractResultText(output);
+  if (!target || !target.text) return;
+  const raw = target.text;
   if (raw.length < 200) return; // small outputs not worth compressing
 
   const args = extractHookArgs(input, output);
@@ -215,17 +274,29 @@ async function processCall(
   const cacheHit = ctx.cache.lookup(fp, outHash, ctx.dedupTtlMs);
   if (cacheHit) {
     const elapsed = Math.round((Date.now() - cacheHit.ts) / 1000);
-    output.output = `<qtk-unchanged tool=${input.tool} since=${elapsed}s_ago>\n${cacheHit.compressed}\n</qtk-unchanged>`;
+    const cachedOpen =
+      `<qtk-unchanged tool=${input.tool} since=${elapsed}s_ago` +
+      (cacheHit.lossy ? ` lossy=true` : "") +
+      (cacheHit.teeFile
+        ? ` tee=${pathToRelative(cacheHit.teeFile, ctx.projectRoot)}`
+        : "") +
+      `>`;
+    const cachedOutput = `${cachedOpen}\n${cacheHit.compressed}\n</qtk-unchanged>`;
+    target.write(cachedOutput);
     const cacheOutcome: CompressionOutcome = {
       compressor: "session-cache",
+      compressorSource: "session-cache",
+      resultShape: target.shape,
+      isLossy: cacheHit.lossy ?? false,
+      isGeneric: false,
       originalBytes: raw.length,
-      compressedBytes: output.output.length,
+      compressedBytes: cachedOutput.length,
       originalTokensEst: estimateTokens(raw),
-      compressedTokensEst: estimateTokens(output.output),
-      ratio: output.output.length / raw.length,
+      compressedTokensEst: estimateTokens(cachedOutput),
+      ratio: cachedOutput.length / raw.length,
       durationMs: 0,
       wasCacheHit: true,
-      teeFile: null,
+      teeFile: cacheHit.teeFile ?? null,
     };
     if (ctx.stats) {
       ctx.stats.log({
@@ -235,7 +306,11 @@ async function processCall(
         outcome: cacheOutcome,
       });
     }
-    ctx.savingsExporter.record(cacheOutcome);
+    ctx.savingsExporter.record(cacheOutcome, {
+      tool: input.tool,
+      compressorSource: cacheOutcome.compressorSource,
+      resultShape: cacheOutcome.resultShape,
+    });
     return;
   }
 
@@ -317,35 +392,49 @@ async function processCall(
   if (compressed === raw) return;
 
   const ratio = compressed.length / raw.length;
+  const isLossyGeneric = isGenericCompressor(compressorName);
 
   // Decide whether to tee
   let teeFile: string | null = null;
   const shouldTee =
+    isLossyGeneric ||
     (ctx.tee && ctx.teeMode === "always") ||
     (ctx.teeMode === "failures_and_compressed" && ratio < 0.7);
   if (shouldTee && ctx.tee) {
     teeFile = await ctx.tee.write(input.callID, raw);
   }
+  // Generic fallbacks are intentionally lossy summaries. Require a recoverable
+  // raw tee so the agent can inspect exact content if needed.
+  if (isLossyGeneric && !teeFile) return;
 
   // Wrap compressed output in an envelope so the model can find the tee if needed
   const origLines = raw.split("\n").length;
   const envelopeOpen =
     `<qtk-compressed compressor=${compressorName} orig_lines=${origLines} ratio=${ratio.toFixed(2)}` +
+    (isLossyGeneric ? ` lossy=true` : "") +
     (teeFile ? ` tee=${pathToRelative(teeFile, ctx.projectRoot)}` : "") +
     `>`;
 
-  output.output = `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
+  const compressedOutput = `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
+  target.write(compressedOutput);
 
   // Cache the (raw) hash + the compressed body, so repeats short-circuit
-  ctx.cache.put(fp, outHash, compressed);
+  ctx.cache.put(fp, outHash, compressed, {
+    lossy: isLossyGeneric,
+    teeFile,
+  });
 
   // Log to stats + savings export (always — exporter is required)
   const outcome: CompressionOutcome = {
     compressor: compressorName,
+    compressorSource: classifyCompressorSource(compressorName),
+    resultShape: target.shape,
+    isLossy: isLossyGeneric,
+    isGeneric: isGenericCompressor(compressorName),
     originalBytes: raw.length,
-    compressedBytes: output.output.length,
+    compressedBytes: compressedOutput.length,
     originalTokensEst: estimateTokens(raw),
-    compressedTokensEst: estimateTokens(output.output),
+    compressedTokensEst: estimateTokens(compressedOutput),
     ratio,
     durationMs,
     wasCacheHit: false,
@@ -359,7 +448,11 @@ async function processCall(
       outcome,
     });
   }
-  ctx.savingsExporter.record(outcome);
+  ctx.savingsExporter.record(outcome, {
+    tool: input.tool,
+    compressorSource: outcome.compressorSource,
+    resultShape: outcome.resultShape,
+  });
 }
 
 function extractCommandHead(

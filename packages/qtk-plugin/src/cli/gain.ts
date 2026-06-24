@@ -16,6 +16,7 @@ import {
   estimateUsdSaved,
   formatUsd,
 } from "../pricing.ts";
+import { classifyCompressorSource } from "../metrics.ts";
 
 interface CompressionRow {
   ts: number;
@@ -29,16 +30,21 @@ interface CompressionRow {
   compressed_tokens_est: number;
   ratio: number;
   was_cache_hit: number;
+  tee_file?: string | null;
   duration_ms: number;
+  result_shape?: string;
+  compressor_source?: string;
+  is_lossy?: number;
+  is_generic?: number;
 }
 
 interface SummaryRow {
-  compressor: string;
+  name: string;
   n: number;
   total_in: number;
   total_out: number;
   tokens_saved: number;
-  median_ratio: number;
+  avg_ratio: number;
 }
 
 function findDb(): string {
@@ -132,51 +138,42 @@ function main() {
   console.log(`Cost saved (est): ${formatUsd(usdSaved)}`);
   console.log("");
 
-  // ── By compressor ────────────────────────────────────────────────────────
-  let byCompQuery = `
-    SELECT compressor, COUNT(*) as n,
-      SUM(original_bytes) as total_in,
-      SUM(compressed_bytes) as total_out,
-      SUM(original_tokens_est - compressed_tokens_est) as tokens_saved,
-      AVG(ratio) as median_ratio
-    FROM compressions
-  `;
-  if (where.length) byCompQuery += " WHERE " + where.join(" AND ");
-  byCompQuery += " GROUP BY compressor ORDER BY tokens_saved DESC";
-  const byComp = db.query(byCompQuery).all() as SummaryRow[];
-  console.log("By compressor:");
-  console.log(
-    "  name              calls    bytes-in   bytes-out  tok-saved   USD-saved  avg-ratio",
+  // ── By compressor / tool / source / shape ───────────────────────────────
+  const byComp = groupRows(rows, (r) => r.compressor);
+  printGroup("By compressor:", byComp, pricing);
+
+  const byTool = groupRows(rows, (r) => r.tool || "unknown");
+  printGroup("By tool:", byTool, pricing);
+
+  const bySource = groupRows(rows, (r) =>
+    r.compressor_source || classifyCompressorSource(r.compressor),
   );
-  for (const r of byComp) {
-    const usd = estimateUsdSaved(r.tokens_saved, pricing);
-    console.log(
-      `  ${r.compressor.padEnd(18)} ${String(r.n).padStart(5)}  ${fmt(r.total_in).padStart(10)} ${fmt(r.total_out).padStart(10)}  ${fmt(r.tokens_saved).padStart(9)}   ${formatUsd(usd).padStart(8)}  ${pct(r.median_ratio).padStart(7)}`,
-    );
+  printGroup("By source:", bySource, pricing);
+
+  const byShape = groupRows(rows, (r) => r.result_shape || "output");
+  printGroup("By result shape:", byShape, pricing);
+
+  const lossy = rows.filter((r) => r.is_lossy === 1).length;
+  const generic = rows.filter(
+    (r) => r.is_generic === 1 || (r.compressor_source ?? "") === "generic",
+  ).length;
+  if (lossy > 0 || generic > 0) {
+    const teeBacked = rows.filter((r) => r.is_lossy === 1 && r.tee_file).length;
+    console.log("Lossy/generic:");
+    console.log(`  generic calls:       ${generic}`);
+    console.log(`  lossy calls:         ${lossy}`);
+    console.log(`  lossy tee-backed:    ${teeBacked}`);
+    console.log("");
   }
-  console.log("");
 
   // ── Top commands by impact ──────────────────────────────────────────────
-  let topQuery = `
-    SELECT command_head, COUNT(*) as n,
-      SUM(original_tokens_est - compressed_tokens_est) as tokens_saved,
-      AVG(ratio) as median_ratio
-    FROM compressions
-  `;
-  if (where.length) topQuery += " WHERE " + where.join(" AND ");
-  topQuery += " GROUP BY command_head ORDER BY tokens_saved DESC LIMIT 10";
-  const top = db.query(topQuery).all() as {
-    command_head: string;
-    n: number;
-    tokens_saved: number;
-    median_ratio: number;
-  }[];
+  const top = groupRows(rows, (r) => r.command_head || "(unknown)").slice(0, 10);
   console.log("Top 10 commands by tokens saved:");
   console.log("  command                            calls  tok-saved   USD-saved  avg-ratio");
   for (const r of top) {
     const usd = estimateUsdSaved(r.tokens_saved, pricing);
     console.log(
-      `  ${(r.command_head || "(unknown)").padEnd(34)} ${String(r.n).padStart(5)}  ${fmt(r.tokens_saved).padStart(9)}   ${formatUsd(usd).padStart(8)}  ${pct(r.median_ratio).padStart(7)}`,
+      `  ${r.name.padEnd(34)} ${String(r.n).padStart(5)}  ${fmt(r.tokens_saved).padStart(9)}   ${formatUsd(usd).padStart(8)}  ${pct(r.avg_ratio).padStart(7)}`,
     );
   }
 
@@ -209,6 +206,42 @@ function main() {
   }
 
   db.close();
+}
+
+function printGroup(title: string, rows: SummaryRow[], pricing = lookupPricing(null)) {
+  console.log(title);
+  console.log(
+    "  name              calls    bytes-in   bytes-out  tok-saved   USD-saved  avg-ratio",
+  );
+  for (const r of rows) {
+    const usd = estimateUsdSaved(r.tokens_saved, pricing);
+    console.log(
+      `  ${r.name.padEnd(18)} ${String(r.n).padStart(5)}  ${fmt(r.total_in).padStart(10)} ${fmt(r.total_out).padStart(10)}  ${fmt(r.tokens_saved).padStart(9)}   ${formatUsd(usd).padStart(8)}  ${pct(r.avg_ratio).padStart(7)}`,
+    );
+  }
+  console.log("");
+}
+
+function groupRows(rows: CompressionRow[], keyFn: (row: CompressionRow) => string): SummaryRow[] {
+  const groups = new Map<string, CompressionRow[]>();
+  for (const row of rows) {
+    const key = keyFn(row) || "unknown";
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  return [...groups.entries()]
+    .map(([name, items]) => ({
+      name,
+      n: items.length,
+      total_in: items.reduce((sum, row) => sum + row.original_bytes, 0),
+      total_out: items.reduce((sum, row) => sum + row.compressed_bytes, 0),
+      tokens_saved: items.reduce(
+        (sum, row) => sum + row.original_tokens_est - row.compressed_tokens_est,
+        0,
+      ),
+      avg_ratio:
+        items.reduce((sum, row) => sum + row.ratio, 0) / Math.max(1, items.length),
+    }))
+    .sort((a, b) => b.tokens_saved - a.tokens_saved);
 }
 
 main();
