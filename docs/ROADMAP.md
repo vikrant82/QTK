@@ -22,6 +22,7 @@
 | —     | npm publish under @qalarc scope                                      | 🟡 queued    |
 | —     | RTK community outreach (draft in docs/RTK-OUTREACH-DRAFT.md)         | 🟡 queued    |
 | —     | v0.3.1 tag to exercise the release pipeline                          | 🟡 queued    |
+| —     | RTK parity roadmap (docs/RTK-PARITY-MATRIX.md)                       | 🟡 active    |
 
 ---
 
@@ -101,8 +102,10 @@ Goal: let users add per-project compressors without writing TypeScript.
 - ✅ Invalid TOML files log a warning but don't break QTK
 - ✅ The DSL runtime achieves competitive performance — 98.2% reduction on
   `kubectl get pods` at p99 1.17 ms, same ballpark as hand-written TS
-- 🟡 RTK filter import: pipeline works; haven't yet bulk-imported the 50+
-  corpus (requires `git clone rtk-ai/rtk` + run script)
+- ✅ RTK filter import: 59 filters are imported under
+  `packages/qtk-filters/imported/`
+- 🟡 Packaged imported filters are not loaded automatically yet; project-local
+  `.opencode/qtk/filters/*.toml` filters are active today
 
 ---
 

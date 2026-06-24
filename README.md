@@ -94,7 +94,7 @@ mechanically-compressible tool output:
 - `ls -la` columns of `drwxr-xr-x 5 user group 4096 May 20 14:23 ...`
 - `rg <pattern>` repeated `path:line:match` clusters
 - `cargo test` "Compiling N crates" verbosity
-- `npm install` progress bars and "added 412 packages" trees
+- package-manager progress bars and dependency trees (planned/bundled-filter coverage)
 - `kubectl get pods -o yaml` (multi-KB per pod, mostly `managedFields`)
 - `terraform plan` showing 50 resources where 3 changed
 
@@ -402,7 +402,9 @@ opencode process
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design,
 [`docs/RTK-COMPARISON.md`](docs/RTK-COMPARISON.md) for the detailed RTK
-side-by-side, [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model.
+side-by-side, [`docs/RTK-PARITY-MATRIX.md`](docs/RTK-PARITY-MATRIX.md) for the
+coverage roadmap, and [`docs/SECURITY.md`](docs/SECURITY.md) for the threat
+model.
 
 ---
 

@@ -3,15 +3,15 @@
 > The Phase 2 TOML filter DSL lets users add per-project compressors without
 > writing TypeScript. This doc is the full reference of supported keys.
 >
-> **Status:** Specification complete; implementation lands in Phase 2.
-> Phase 1 ships only hand-written TS compressors.
+> **Status:** Implemented. Project-local filters are loaded from
+> `.opencode/qtk/filters/*.toml` and hot-reloaded during an opencode session.
 
 ---
 
 ## Why a DSL
 
-Phase 1 ships 7–15 hand-written TypeScript compressors covering the most-used
-commands. But the long tail of commands is enormous — every team uses
+QTK ships a small set of hand-written TypeScript compressors covering the
+highest-volume tools. But the long tail of commands is enormous — every team uses
 different tools (terraform, kubectl, docker compose, dbt, sqlx, prisma,
 their custom scripts, etc.). We can't ship a TS compressor for every one.
 
@@ -20,8 +20,9 @@ that lives in their project's `.opencode/qtk/filters/` directory. No
 JavaScript skills needed; no rebuild of QTK; no PR upstream.
 
 The format is designed to be compatible with RTK's TOML filter format
-(Apache 2.0). We can `scripts/import-rtk-filters.ts` their corpus and get
-~50 ready-to-use filters for free.
+(Apache 2.0). `scripts/import-rtk-filters.ts` imports RTK filters into
+`packages/qtk-filters/imported/`; loading those packaged filters automatically
+is tracked in the parity roadmap.
 
 ---
 
