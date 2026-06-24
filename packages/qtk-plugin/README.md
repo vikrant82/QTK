@@ -48,7 +48,7 @@ and recognizable MCP/task text shapes via the tee-backed `generic-text`
 fallback.
 
 It also has a conservative `tool.execute.before` hook for Bash-only quiet
-rewrites such as `pytest -q`, `cargo --quiet`, and `npm`/`pnpm install --silent`.
+rewrites such as `pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`, and Gradle `--quiet --console=plain`.
 Set `QTK_REWRITE_DISABLED=1` to disable only those rewrites, or
 `QTK_DISABLED=1` to disable the plugin.
 

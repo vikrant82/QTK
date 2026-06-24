@@ -11,12 +11,19 @@ export interface RewriteResult {
 const VERBOSE_FLAGS = [
   "-v",
   "-s",
+  "-i",
+  "-d",
+  "-S",
   "-vv",
   "-vvv",
   "--verbose",
   "--debug",
+  "--info",
   "--trace",
+  "--stacktrace",
+  "--full-stacktrace",
   "--nocapture",
+  "--scan",
 ];
 
 export function rewriteCommand(command: string): RewriteResult | null {
@@ -27,7 +34,8 @@ export function rewriteCommand(command: string): RewriteResult | null {
   return (
     rewritePytest(trimmed) ??
     rewriteCargo(trimmed) ??
-    rewritePackageInstall(trimmed)
+    rewritePackageInstall(trimmed) ??
+    rewriteGradle(trimmed)
   );
 }
 
@@ -66,12 +74,33 @@ function rewritePackageInstall(command: string): RewriteResult | null {
   };
 }
 
+function rewriteGradle(command: string): RewriteResult | null {
+  const match = command.match(/^(\.\/gradlew|gradlew\.bat|gradlew|gradle)(?:\s|$)/);
+  if (!match) return null;
+  const additions: string[] = [];
+  if (!hasFlag(command, "--quiet") && !hasFlag(command, "-q")) {
+    additions.push("--quiet");
+  }
+  if (!hasOptionPrefix(command, "--console")) {
+    additions.push("--console=plain");
+  }
+  if (additions.length === 0) return null;
+  return {
+    command: `${command} ${additions.join(" ")}`,
+    rule: "gradle-quiet-plain",
+  };
+}
+
 function hasVerboseIntent(command: string): boolean {
   return VERBOSE_FLAGS.some((flag) => hasFlag(command, flag));
 }
 
 function hasFlag(command: string, flag: string): boolean {
   return new RegExp(`(^|\\s)${escapeRegExp(flag)}(\\s|$)`).test(command);
+}
+
+function hasOptionPrefix(command: string, option: string): boolean {
+  return new RegExp(`(^|\\s)${escapeRegExp(option)}(?:\\s|=|$)`).test(command);
 }
 
 function insertAfterHead(command: string, inserted: string): string {

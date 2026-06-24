@@ -15,6 +15,12 @@ describe("pre-call rewrite", () => {
     expect(rewriteCommand("pnpm i --frozen-lockfile")?.command).toBe(
       "pnpm i --silent --frozen-lockfile",
     );
+    expect(rewriteCommand("./gradlew test")?.command).toBe(
+      "./gradlew test --quiet --console=plain",
+    );
+    expect(rewriteCommand("gradle build --console=rich")?.command).toBe(
+      "gradle build --console=rich --quiet",
+    );
   });
 
   test("skips verbose/debug commands", () => {
@@ -25,6 +31,12 @@ describe("pre-call rewrite", () => {
       "cargo test -- --nocapture",
       "cargo build --verbose",
       "npm install --loglevel verbose",
+      "./gradlew test --info",
+      "./gradlew test -i",
+      "./gradlew test -d",
+      "./gradlew test --stacktrace",
+      "./gradlew test -S",
+      "gradle build --scan",
     ]) {
       expect(rewriteCommand(command)).toBeNull();
     }
@@ -35,6 +47,7 @@ describe("pre-call rewrite", () => {
       "pytest -q tests",
       "cargo check --quiet",
       "npm install --silent",
+      "./gradlew test --quiet --console=plain",
       "pytest tests | cat",
       "npm install && npm test",
     ]) {
