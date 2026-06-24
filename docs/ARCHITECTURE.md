@@ -7,15 +7,15 @@
 
 ## 1. Where QTK lives in opencode's tool-call lifecycle
 
-Every tool call in opencode (`Bash`, `Read`, `Grep`, `Glob`, MCP tools, the
-`Task` sub-agent tool) flows through one wrapper function in
-`packages/opencode/src/session/prompt.ts` around line 1036–1088:
+Model-executed registered tools in current opencode (`Bash`, `Read`, `Grep`,
+`Glob`, `Task`, and MCP tools) flow through the tool resolver in
+`packages/opencode/src/session/tools.ts`:
 
 ```ts
 async execute(args, options) {
   await Plugin.trigger(
     "tool.execute.before",
-    { tool: item.id, sessionID, callID: options.toolCallId },
+    { tool: item.id, sessionID, callID: options.toolCallId, args },
     { args },
   )
 
@@ -23,13 +23,13 @@ async execute(args, options) {
 
   await Plugin.trigger(
     "tool.execute.after",
-    { tool: item.id, sessionID, callID: options.toolCallId },
+    { tool: item.id, sessionID, callID: options.toolCallId, args },
     result,                                          // ← QTK mutates this
   )
   return result
 },
 toModelOutput(result) {
-  return { type: "text", value: result.output }     // ← this is what the LLM sees
+  return { type: "text", value: result.output }     // ← normal tools
 }
 ```
 
@@ -38,6 +38,11 @@ function with the **mutable** `result` object. **Any plugin can mutate
 `result.output`** and the change flows directly into `toModelOutput()`.
 
 QTK registers a `tool.execute.after` hook and rewrites `result.output` in place.
+Current MCP tools also trigger the hook, but their result can arrive before
+opencode flattens MCP content into the normal `{ output: string }` shape; QTK
+currently passes those through unless a normal string output is present.
+User-triggered TUI shell commands (`!cmd`) use a separate opencode path and do
+not appear to trigger `tool.execute.after` today.
 
 That's the entire integration surface. ~5 lines in opencode we don't have to
 touch.
@@ -70,20 +75,20 @@ qtk-plugin/
     estimator.ts       ← token estimator (chars/4, matches opencode's)
 
     compressors/       ← per-command compressors
-      git.ts             git status / log / diff
+      git.ts             git status / log (2 distinct compressors)
       ls.ts              ls / ls -la
       rg.ts              ripgrep output (also covers `grep -r`)
-      find.ts            find / fd
       cargo.ts           cargo build/test/clippy
       pytest.ts          pytest summaries
-      npm.ts             npm install/test/run-script
-      jest.ts            jest / vitest JSON output
-      generic.ts         fallback heuristics for unknown commands
 
     tools/             ← compressors for built-in opencode tools
       read.ts            Read tool → outline if too long
       grep.ts            Grep tool → group by file
       glob.ts            Glob tool → cluster by directory
+
+    dsl/               ← project-local TOML filters
+    sidecar/           ← optional qtk-core client and async wrappers
+    cli/               ← qtk gain analytics
 ```
 
 ---
@@ -96,7 +101,7 @@ qtk-plugin/
 │                                                                         │
 │ 1. LLM emits tool_use: bash {"command": "git status"}                   │
 │                                                                         │
-│ 2. session/prompt.ts wraps the bash tool's execute()                    │
+│ 2. session/tools.ts wraps the bash tool's execute()                     │
 │    ↓                                                                    │
 │    fires Plugin.trigger("tool.execute.before") → RTK plugin             │
 │    (if RTK is installed, it MAY rewrite to "rtk git status")            │
@@ -117,7 +122,7 @@ qtk-plugin/
 │                                                                         │
 │    c. Pick compressor:                                                  │
 │         registry.lookup(tool, args.command)                             │
-│         If no match → generic.ts heuristics                             │
+│         If no match → leave output unchanged today                      │
 │                                                                         │
 │    d. compressor.compress(result.output) → compressed string            │
 │         If compressor throws → log + leave output unchanged             │
@@ -132,7 +137,7 @@ qtk-plugin/
 │    f. stats.log(...)                                                    │
 │    g. cache.put(fingerprint, outputHash, compressed)                    │
 │                                                                         │
-│ 6. session/prompt.ts → toModelOutput(result) → LLM context              │
+│ 6. opencode result conversion → LLM context                             │
 │    (250 bytes of compact text + 1.8 KB invisible on disk)               │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

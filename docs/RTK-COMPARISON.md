@@ -42,7 +42,7 @@
 | Tee perms                        | 0o644 (umask default — world-readable!)       | 0o600 explicit                             |
 | Telemetry kill switch            | Runtime + env var                             | Not applicable (no network code exists)    |
 | Coverage of `Read`/`Grep`/`Glob` | Zero                                          | Full                                       |
-| Built-in test runners            | jest/vitest/pytest/cargo/go/playwright        | Phase 1: pytest/cargo/jest/vitest          |
+| Built-in test runners            | jest/vitest/pytest/cargo/go/playwright        | Active: pytest/cargo; planned: jest/vitest/playwright/go |
 | Standalone CLI                   | Yes (`rtk`)                                   | Only `qtk gain` (optional analytics)       |
 | Cross-agent support              | 14+ agents                                    | opencode plugin surface only               |
 
