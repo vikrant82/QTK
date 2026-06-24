@@ -8,7 +8,7 @@
 // Path safety: filter files MUST live under `<projectRoot>/.opencode/qtk/filters/`.
 // We refuse symlinks that point outside that directory.
 
-import { resolve, join } from "node:path";
+import { resolve, join, relative, isAbsolute } from "node:path";
 import { readdir, stat, realpath } from "node:fs/promises";
 import { parseFilterToml } from "./parser.ts";
 import { validateFilterSpec } from "./spec.ts";
@@ -39,7 +39,12 @@ export async function loadFilters(
   filterDir: string = DEFAULT_FILTER_DIR,
 ): Promise<LoadResult> {
   const dir = resolve(projectRoot, filterDir);
-  const projectRootResolved = resolve(projectRoot);
+  let filterDirResolved: string;
+  try {
+    filterDirResolved = await realpath(dir);
+  } catch {
+    filterDirResolved = dir;
+  }
 
   let entries: string[];
   try {
@@ -55,14 +60,16 @@ export async function loadFilters(
 
   for (const name of tomlFiles) {
     const filePath = join(dir, name);
+    let safeFilePath = filePath;
 
-    // Path-confinement: refuse files that resolve outside the project
+    // Path-confinement: refuse files that resolve outside the filter directory
     try {
       const realFile = await realpath(filePath);
-      if (!realFile.startsWith(projectRootResolved + "/")) {
+      const relativeFile = relative(filterDirResolved, realFile);
+      if (relativeFile.startsWith("..") || isAbsolute(relativeFile)) {
         errors.push({
           source: filePath,
-          error: `refusing filter that resolves outside project root: ${realFile}`,
+          error: `refusing filter that resolves outside filter directory: ${realFile}`,
         });
         continue;
       }
@@ -74,13 +81,14 @@ export async function loadFilters(
         });
         continue;
       }
+      safeFilePath = realFile;
     } catch (e) {
       errors.push({ source: filePath, error: (e as Error).message });
       continue;
     }
 
     try {
-      const text = await Bun.file(filePath).text();
+      const text = await Bun.file(safeFilePath).text();
       const raw = parseFilterToml(text, filePath);
       const spec = validateFilterSpec(raw, filePath);
       if (!spec.enabled) continue;
