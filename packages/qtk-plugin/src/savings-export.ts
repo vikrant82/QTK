@@ -83,7 +83,7 @@ export interface SavingsSnapshot {
 export class SavingsExporter {
   private readonly absPath: string;
   private readonly projectRoot: string;
-  private readonly sessionId: string;
+  private sessionId: string;
 
   // Running totals (in-memory, source of truth)
   private calls = 0;
@@ -116,6 +116,14 @@ export class SavingsExporter {
   setModelId(modelId: string | null | undefined): void {
     if (modelId && modelId !== this.modelId) {
       this.modelId = modelId;
+      this.scheduleFlush();
+    }
+  }
+
+  /** Set the opencode session id once it is available from the hook input. */
+  setSessionId(sessionId: string | null | undefined): void {
+    if (sessionId && sessionId !== this.sessionId) {
+      this.sessionId = sessionId;
       this.scheduleFlush();
     }
   }

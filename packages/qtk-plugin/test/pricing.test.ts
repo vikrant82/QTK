@@ -295,4 +295,25 @@ describe("savings-export — SavingsExporter", () => {
     expect(snap.totals.model).toBe("claude-opus-4-5");
     expect(snap.totals.pricing.inputUsdPer1M).toBe(15.0);
   });
+
+  test("setSessionId updates the exported session id", async () => {
+    const exp = new SavingsExporter(tmpRoot, "unknown", 1_000_000);
+    exp.record({
+      compressor: "x",
+      originalBytes: 100,
+      compressedBytes: 20,
+      originalTokensEst: 25,
+      compressedTokensEst: 5,
+      ratio: 0.2,
+      durationMs: 1,
+      wasCacheHit: false,
+      teeFile: null,
+    });
+    exp.setSessionId("session-real");
+    await exp.flushNow();
+
+    const path = join(tmpRoot, SAVINGS_FILE_REL);
+    const snap = JSON.parse(readFileSync(path, "utf-8")) as SavingsSnapshot;
+    expect(snap.session_id).toBe("session-real");
+  });
 });
