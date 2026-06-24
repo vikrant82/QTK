@@ -39,8 +39,8 @@ opencode.
 
 ```
 [qtk] sidecar: qtk-core binary not found; using TS-only
-[qtk] active — 11 compressors registered
-[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, find, rg, package-manager, pytest, cargo
+[qtk] active — 12 compressors registered
+[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, find, rg, package-manager, pytest, cargo, generic-text
 
 # If qtk-core is installed, QTK also enables 4 async sidecar compressors:
 # sidecar:terraform-plan, sidecar:kubectl-structured,
@@ -78,7 +78,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
-[![tests](https://img.shields.io/badge/tests-161%20passing-brightgreen)](#tests)
+[![tests](https://img.shields.io/badge/tests-174%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![downstream of](https://img.shields.io/badge/downstream%20of-RTK-orange)](https://github.com/rtk-ai/rtk)
@@ -167,7 +167,8 @@ Throughput (concurrent batches of 50):
 3. QTK looks up a matching compressor:
    - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
-   - Then: the **11 registered built-in TS compressors** (`git-status`, `git-log`, `ls`, `find`, `rg`, `package-manager`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
+   - Then: the **11 specific registered TS compressors** (`git-status`, `git-log`, `ls`, `find`, `rg`, `package-manager`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
+   - Last: `generic-text`, a conservative lossy fallback for recognizable MCP/task text shapes (path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs). Generic compression requires a raw tee file and is marked `lossy=true`.
 4. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
 5. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
 6. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
@@ -178,7 +179,7 @@ Throughput (concurrent batches of 50):
 
 ## What's in here
 
-### Phase 1: 11 registered built-in TypeScript compressors
+### Phase 1/4: 12 registered TypeScript compressors
 
 Hand-written, sub-100µs median latency:
 
@@ -432,7 +433,7 @@ QTK/
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 139 TS tests
+│   │   └── test/                   ← 152 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -453,16 +454,16 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 139 TS tests
+bun test                          # 152 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 161 passing, 0 failing
+# total: 174 passing, 0 failing
 ```
 
 Coverage:
 
 | Area                         | Tests | Notes                                                   |
 | ---------------------------- | ----- | ------------------------------------------------------- |
-| Phase 1 compressors          | 42    | Command/tool compressors, golden fixtures, adversarial inputs |
+| Phase 1/4 compressors        | 52    | Command/tool/generic compressors, fixtures, adversarial inputs |
 | Session cache                | 3     | Fingerprint stability, hash check, LRU pruning          |
 | Circuit breaker              | 2     | 3-strike disable, per-compressor isolation              |
 | Tee secret redaction         | 4     | AWS, GitHub PAT, Bearer, benign-passthrough             |

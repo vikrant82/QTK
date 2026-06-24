@@ -358,11 +358,11 @@ ratio: 0.603 saved: 39.7%
 ### Test summary
 
 ```
-bun test v1.3.6
- 139 pass
+bun test v1.3.14
+ 152 pass
  0 fail
- 323 expect() calls
-Ran 139 tests across 8 files.
+ 362 expect() calls
+Ran 152 tests across 8 files.
 ```
 
 ### Coverage by area
@@ -450,7 +450,8 @@ QTK/
 │   │   │   │   ├── rg.ts
 │   │   │   │   ├── package-manager.ts
 │   │   │   │   ├── pytest.ts
-│   │   │   │   └── cargo.ts
+│   │   │   │   ├── cargo.ts
+│   │   │   │   └── generic-text.ts
 │   │   │   ├── tools/               ← Phase 1 built-in tool compressors
 │   │   │   │   ├── read.ts
 │   │   │   │   ├── grep.ts
@@ -465,7 +466,7 @@ QTK/
 │   │   │   └── cli/
 │   │   │       └── gain.ts          ← `qtk gain` analytics CLI
 │   │   ├── test/
-│   │   │   ├── compressors.test.ts  ← 51 tests (Phase 1/2 compressors)
+│   │   │   ├── compressors.test.ts  ← 61 tests (Phase 1/2/4 compressors)
 │   │   │   ├── dsl.test.ts          ← 39 tests (Phase 2 — NEW)
 │   │   │   ├── result-text.test.ts   ← MCP result-shape tests
 │   │   │   ├── plugin-hook.test.ts   ← opencode hook compatibility tests

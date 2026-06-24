@@ -3,6 +3,7 @@ import { CircuitBreaker } from "../src/circuit-breaker.ts";
 import { SessionCache } from "../src/cache.ts";
 import { _internal } from "../src/index.ts";
 import { CompressorRegistry } from "../src/registry.ts";
+import type { TeeWriter } from "../src/tee.ts";
 
 function processContext() {
   return {
@@ -117,5 +118,76 @@ describe("opencode tool hook compatibility", () => {
     expect(output.content).toEqual([
       { type: "image", mimeType: "image/png", data: "abc" },
     ]);
+  });
+
+  test("generic MCP compression requires a recoverable tee", async () => {
+    const raw = Array.from(
+      { length: 60 },
+      (_, i) => `packages/app/src/file-${i}.ts`,
+    ).join("\n");
+    const output = { content: [{ type: "text", text: raw }], metadata: {} };
+
+    await _internal.processCall(
+      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      output,
+      processContext(),
+    );
+
+    expect(output.content[0]!.text).toBe(raw);
+  });
+
+  test("generic MCP compression writes lossy envelope with tee", async () => {
+    const raw = Array.from(
+      { length: 60 },
+      (_, i) => `packages/app/src/file-${i}.ts`,
+    ).join("\n");
+    const output = { content: [{ type: "text", text: raw }], metadata: {} };
+
+    await _internal.processCall(
+      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      output,
+      {
+        ...processContext(),
+        tee: {
+          write: async () => "/tmp/.opencode/qtk-tee/call-test.log",
+        } as unknown as TeeWriter,
+      },
+    );
+
+    expect(output.content[0]!.text).toContain("<qtk-compressed compressor=generic-text");
+    expect(output.content[0]!.text).toContain("lossy=true");
+    expect(output.content[0]!.text).toContain("tee=.opencode/qtk-tee/call-test.log");
+  });
+
+  test("generic cache hits preserve lossy tee metadata", async () => {
+    const raw = Array.from(
+      { length: 60 },
+      (_, i) => `packages/app/src/file-${i}.ts`,
+    ).join("\n");
+    const cache = new SessionCache();
+    const ctx = {
+      ...processContext(),
+      cache,
+      tee: {
+        write: async () => "/tmp/.opencode/qtk-tee/call-test.log",
+      } as unknown as TeeWriter,
+    };
+
+    await _internal.processCall(
+      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      { content: [{ type: "text", text: raw }], metadata: {} },
+      ctx,
+    );
+
+    const repeat = { content: [{ type: "text", text: raw }], metadata: {} };
+    await _internal.processCall(
+      { tool: "serena_find_symbol", sessionID: "session-test", callID: "call-test" },
+      repeat,
+      { ...ctx, tee: null },
+    );
+
+    expect(repeat.content[0]!.text).toContain("<qtk-unchanged");
+    expect(repeat.content[0]!.text).toContain("lossy=true");
+    expect(repeat.content[0]!.text).toContain("tee=.opencode/qtk-tee/call-test.log");
   });
 });

@@ -13,6 +13,7 @@ import { rgCompressor } from "./compressors/rg.ts";
 import { pytestCompressor } from "./compressors/pytest.ts";
 import { cargoTestCompressor } from "./compressors/cargo.ts";
 import { packageManagerCompressor } from "./compressors/package-manager.ts";
+import { genericTextCompressor } from "./compressors/generic-text.ts";
 import { readToolCompressor } from "./tools/read.ts";
 import { grepToolCompressor } from "./tools/grep.ts";
 import { globToolCompressor } from "./tools/glob.ts";
@@ -34,6 +35,8 @@ export const DEFAULT_COMPRESSORS: readonly Compressor[] = [
   packageManagerCompressor,
   pytestCompressor,
   cargoTestCompressor,
+  // Last-resort content-shape compressor for MCP/task text outputs.
+  genericTextCompressor,
 ];
 
 export class CompressorRegistry {

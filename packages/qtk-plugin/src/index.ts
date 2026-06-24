@@ -246,7 +246,14 @@ async function processCall(
   const cacheHit = ctx.cache.lookup(fp, outHash, ctx.dedupTtlMs);
   if (cacheHit) {
     const elapsed = Math.round((Date.now() - cacheHit.ts) / 1000);
-    const cachedOutput = `<qtk-unchanged tool=${input.tool} since=${elapsed}s_ago>\n${cacheHit.compressed}\n</qtk-unchanged>`;
+    const cachedOpen =
+      `<qtk-unchanged tool=${input.tool} since=${elapsed}s_ago` +
+      (cacheHit.lossy ? ` lossy=true` : "") +
+      (cacheHit.teeFile
+        ? ` tee=${pathToRelative(cacheHit.teeFile, ctx.projectRoot)}`
+        : "") +
+      `>`;
+    const cachedOutput = `${cachedOpen}\n${cacheHit.compressed}\n</qtk-unchanged>`;
     target.write(cachedOutput);
     const cacheOutcome: CompressionOutcome = {
       compressor: "session-cache",
@@ -349,20 +356,26 @@ async function processCall(
   if (compressed === raw) return;
 
   const ratio = compressed.length / raw.length;
+  const isLossyGeneric = compressorName.startsWith("generic-");
 
   // Decide whether to tee
   let teeFile: string | null = null;
   const shouldTee =
+    isLossyGeneric ||
     (ctx.tee && ctx.teeMode === "always") ||
     (ctx.teeMode === "failures_and_compressed" && ratio < 0.7);
   if (shouldTee && ctx.tee) {
     teeFile = await ctx.tee.write(input.callID, raw);
   }
+  // Generic fallbacks are intentionally lossy summaries. Require a recoverable
+  // raw tee so the agent can inspect exact content if needed.
+  if (isLossyGeneric && !teeFile) return;
 
   // Wrap compressed output in an envelope so the model can find the tee if needed
   const origLines = raw.split("\n").length;
   const envelopeOpen =
     `<qtk-compressed compressor=${compressorName} orig_lines=${origLines} ratio=${ratio.toFixed(2)}` +
+    (isLossyGeneric ? ` lossy=true` : "") +
     (teeFile ? ` tee=${pathToRelative(teeFile, ctx.projectRoot)}` : "") +
     `>`;
 
@@ -370,7 +383,10 @@ async function processCall(
   target.write(compressedOutput);
 
   // Cache the (raw) hash + the compressed body, so repeats short-circuit
-  ctx.cache.put(fp, outHash, compressed);
+  ctx.cache.put(fp, outHash, compressed, {
+    lossy: isLossyGeneric,
+    teeFile,
+  });
 
   // Log to stats + savings export (always — exporter is required)
   const outcome: CompressionOutcome = {
