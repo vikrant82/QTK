@@ -8,7 +8,7 @@
 | Phase | Description                                                          | Status        |
 | ----- | -------------------------------------------------------------------- | ------------- |
 | 0     | Repo bootstrap                                                       | ✅ done       |
-| 1     | TS-only MVP plugin (9 compressors)                                   | ✅ done       |
+| 1     | TS-only MVP plugin (11 compressors)                                  | ✅ done       |
 | 2     | TOML filter DSL + RTK filter corpus bulk-imported (59/59)            | ✅ done       |
 | 3     | Rust sidecar (`qtk-core`) for heavy parsers                          | ✅ done       |
 | —     | Public release (github.com/qalarc/QTK + qalarc.com + blog)           | ✅ done       |
@@ -39,10 +39,12 @@
 Working `qtk-plugin` that:
 
 - Hooks `tool.execute.after` and compresses outputs
-- Ships **9 production-quality compressors**:
+- Ships **11 production-quality compressors**:
   - `git status`, `git log`
   - `ls -la`
+  - `find` / `fd`
   - `rg <pattern>` / `grep -r`
+  - `npm` / `pnpm` / `bun` / `yarn` output
   - `cargo test` failures-only
   - `pytest` failures-only
   - **`Read` tool** (200+ line files → outline)
@@ -58,9 +60,9 @@ Working `qtk-plugin` that:
 
 - [x] `packages/qtk-plugin/src/index.ts` — plugin entry point
 - [x] `packages/qtk-plugin/src/{types,registry,config,cache,tee,stats,estimator,circuit-breaker}.ts`
-- [x] `packages/qtk-plugin/src/compressors/{git,ls,rg,cargo,pytest}.ts`
+- [x] `packages/qtk-plugin/src/compressors/{git,ls,find,rg,package-manager,cargo,pytest}.ts`
 - [x] `packages/qtk-plugin/src/tools/{read,grep,glob}.ts`
-- [x] `packages/qtk-plugin/test/compressors.test.ts` — 40 tests, 92 assertions
+- [x] `packages/qtk-plugin/test/compressors.test.ts` — 51 compressor tests
 - [x] `scripts/install-into-opencode.ts` — symlink + jsonc edit + smoke test
 - [x] `scripts/benchmark.ts` — measure compression ratios and p50/p90/p99 latency
 - [x] `qtk gain` CLI — prints session-totals summary

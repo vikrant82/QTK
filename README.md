@@ -39,8 +39,8 @@ opencode.
 
 ```
 [qtk] sidecar: qtk-core binary not found; using TS-only
-[qtk] active — 9 compressors registered
-[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, rg, pytest, cargo
+[qtk] active — 11 compressors registered
+[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, find, rg, package-manager, pytest, cargo
 
 # If qtk-core is installed, QTK also enables 4 async sidecar compressors:
 # sidecar:terraform-plan, sidecar:kubectl-structured,
@@ -78,7 +78,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
-[![tests](https://img.shields.io/badge/tests-140%20passing-brightgreen)](#tests)
+[![tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![downstream of](https://img.shields.io/badge/downstream%20of-RTK-orange)](https://github.com/rtk-ai/rtk)
@@ -94,7 +94,7 @@ mechanically-compressible tool output:
 - `ls -la` columns of `drwxr-xr-x 5 user group 4096 May 20 14:23 ...`
 - `rg <pattern>` repeated `path:line:match` clusters
 - `cargo test` "Compiling N crates" verbosity
-- package-manager progress bars and dependency trees (planned/bundled-filter coverage)
+- package-manager progress bars and dependency trees
 - `kubectl get pods -o yaml` (multi-KB per pod, mostly `managedFields`)
 - `terraform plan` showing 50 resources where 3 changed
 
@@ -168,7 +168,7 @@ Throughput (concurrent batches of 50):
 3. QTK looks up a matching compressor:
    - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
-   - Then: the **9 registered built-in TS compressors** (`git-status`, `git-log`, `ls`, `rg`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
+   - Then: the **11 registered built-in TS compressors** (`git-status`, `git-log`, `ls`, `find`, `rg`, `package-manager`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
 4. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
 5. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
 6. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
@@ -179,14 +179,16 @@ Throughput (concurrent batches of 50):
 
 ## What's in here
 
-### Phase 1: 9 registered built-in TypeScript compressors
+### Phase 1: 11 registered built-in TypeScript compressors
 
 Hand-written, sub-100µs median latency:
 
 - **`git status`** — porcelain → `branch=main (up to date with origin/main)\nstaged (3): modified foo.ts, modified bar.ts, new baz.ts\nunstaged (1): modified qux.ts`
 - **`git log`** — multi-line commits → one-liners with `<hash> <date> <author>: <subject>`
 - **`ls -la`** — long-format → sorted by type with size/mtime; falls back to grouped-by-extension for large flat listings
+- **`find` / `fd`** — one-path-per-line results → grouped by containing directory
 - **`rg`** / **`grep -r`** — `5 matches across 3 files:\n  src/foo.ts (3 matches)\n  L17: ...`
+- **`npm` / `pnpm` / `bun` / `yarn`** — strips install/run progress, lifecycle echoes, and dependency-tree noise
 - **`pytest`** — passing → just the summary; failing → keeps FAILED lines + first 8 trace lines
 - **`cargo test`/`cargo build`/`cargo clippy`** — strips Compiling-noise, keeps errors
 - **`Read` tool** — > 200 lines → signature outline (imports, function/class/interface/export lines)
@@ -393,7 +395,7 @@ opencode process
       │     ├─ Hot-reloaded on file change (250ms debounce)
       │     └─ Pipeline: strip → dedupe → match → group_by → template → truncate
       ├─ Built-in TS compressors (Phase 1)
-      │     git-status, git-log, ls, rg, pytest, cargo,
+      │     git-status, git-log, ls, find, rg, package-manager, pytest, cargo,
       │     tool-read, tool-grep, tool-glob
       ├─ Tee writer (.opencode/qtk-tee/<call-id>.log, 0o600)
       ├─ SQLite stats (.opencode/qtk-stats.sqlite)
@@ -431,7 +433,7 @@ QTK/
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 118 TS tests
+│   │   └── test/                   ← 133 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -452,16 +454,16 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 118 TS tests
+bun test                          # 133 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 140 passing, 0 failing
+# total: 155 passing, 0 failing
 ```
 
 Coverage:
 
 | Area                         | Tests | Notes                                                   |
 | ---------------------------- | ----- | ------------------------------------------------------- |
-| Phase 1 compressors          | 28    | Command/tool compressors, golden fixtures, adversarial inputs |
+| Phase 1 compressors          | 42    | Command/tool compressors, golden fixtures, adversarial inputs |
 | Session cache                | 3     | Fingerprint stability, hash check, LRU pruning          |
 | Circuit breaker              | 2     | 3-strike disable, per-compressor isolation              |
 | Tee secret redaction         | 4     | AWS, GitHub PAT, Bearer, benign-passthrough             |

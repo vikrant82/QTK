@@ -22,10 +22,10 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 | Family | RTK coverage examples | QTK status | Planned mechanism | Priority |
 | --- | --- | --- | --- | --- |
 | Native opencode tools | RTK does not auto-compress `Read`/`Grep`/`Glob` via OpenCode rewrite | `Read`, `Grep`, `Glob` active TS | Extend result normalizer to MCP text | High |
-| File listing/search | `ls`, `tree`, `find`, `cat`, `head`, `tail`, `rg`, `grep`, `diff`, `wc` | `ls`, `rg` active TS; `find`/`diff` planned | TS for `find`/`fd`; TS or sidecar for large diffs | High |
+| File listing/search | `ls`, `tree`, `find`, `cat`, `head`, `tail`, `rg`, `grep`, `diff`, `wc` | `ls`, `find`/`fd`, `rg` active TS; `diff` planned | TS or sidecar for large diffs | High |
 | Git | `git status`, `log`, `diff`, `show`, `add`, `commit`, `push`, `pull` | `git status`, `git log` active TS | TS/DSL for `diff`, `show`, compact state-changing commands | High |
 | GitHub/GitLab CLI | `gh pr/issue/run/repo/api`, `glab` | Planned | TS table/JSON summarizers or bundled filters | Medium |
-| JS package managers | `npm`, `pnpm`, `npx`, `bun`, `yarn` | Planned | TS compressors plus safe quiet pre-call rewrites | High |
+| JS package managers | `npm`, `pnpm`, `npx`, `bun`, `yarn` | `package-manager` active TS for install/run/list noise | Add safe quiet pre-call rewrites | High |
 | JS/TS tests | `jest`, `vitest`, `playwright`, JUnit XML reports | `junit-xml` active sidecar; others planned | TS failure-only compressors; sidecar for XML reports | High |
 | Python | `pytest`, `ruff`, `pip`, `poetry`, `uv` | `pytest` active TS; several bundled filters active by default | Targeted TS where high-volume | High |
 | Rust | `cargo build/test/check/clippy/fmt`, JSON message format | `cargo` active TS; `cargo-json` active sidecar | Add flag-aware behavior and more subcommands | Medium |
@@ -42,8 +42,9 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 
 1. **Packaged filter activation** — done: imported RTK-compatible filters load
    from the package, with project filters taking precedence.
-2. **Everyday TS compressors** — package managers, JS test runners, `find`/`fd`,
-   `git diff/show`, `gh`, `tsc`/`eslint`, Docker.
+2. **Everyday TS compressors** — partially done for package managers and
+   `find`/`fd`; remaining: JS test runners, `git diff/show`, `gh`,
+   `tsc`/`eslint`, Docker.
 3. **Generic postprocessors** — ANSI strip, log entropy normalization, repeated
    line dedupe, path/table grouping, long-line truncation, JSON schema summary,
    and failure/error extraction.

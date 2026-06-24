@@ -42,8 +42,9 @@ Restart opencode. You should see `[qtk] active — N compressors registered`.
 
 QTK hooks `tool.execute.after` in opencode and silently rewrites tool
 outputs to a compact form before the model sees them. Typical
-compression: 60-99% reduction on `git status`, `git log`, `ls -la`, `rg`,
-`pytest`, `cargo`, `Read`, `Grep`, `Glob` tool calls.
+compression: 60-99% reduction on `git status`, `git log`, `ls -la`, `find`,
+`fd`, `rg`, package-manager output, `pytest`, `cargo`, `Read`, `Grep`, `Glob`
+tool calls.
 
 The package also loads bundled RTK-compatible TOML filters by default. For
 per-project custom compressors or overrides, drop TOML files into

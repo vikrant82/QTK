@@ -10,9 +10,11 @@ import {
   gitLogCompressor,
 } from "../src/compressors/git.ts";
 import { lsCompressor } from "../src/compressors/ls.ts";
+import { findCompressor } from "../src/compressors/find.ts";
 import { rgCompressor } from "../src/compressors/rg.ts";
 import { pytestCompressor } from "../src/compressors/pytest.ts";
 import { cargoTestCompressor } from "../src/compressors/cargo.ts";
+import { packageManagerCompressor } from "../src/compressors/package-manager.ts";
 import { readToolCompressor } from "../src/tools/read.ts";
 import { grepToolCompressor } from "../src/tools/grep.ts";
 import { globToolCompressor } from "../src/tools/glob.ts";
@@ -226,6 +228,126 @@ drwxr-xr-x  2 user user  4096 May 20 14:23 scripts
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("packages/");
     expect(out).toContain("README.md");
+  });
+});
+
+// ─── find / fd ───────────────────────────────────────────────────────────────
+
+describe("find compressor", () => {
+  test("is registered by default", () => {
+    expect(new CompressorRegistry().names()).toContain("find");
+  });
+
+  test("matches simple find/fd path-list commands", () => {
+    expect(findCompressor.matches("bash", { command: "find . -name '*.ts'" })).toBe(
+      true,
+    );
+    expect(findCompressor.matches("bash", { command: "fd Controller src" })).toBe(
+      true,
+    );
+  });
+
+  test("does NOT match shell compositions or null-delimited output", () => {
+    expect(findCompressor.matches("bash", { command: "find . | head" })).toBe(
+      false,
+    );
+    expect(findCompressor.matches("bash", { command: "find . -print0" })).toBe(
+      false,
+    );
+    expect(findCompressor.matches("bash", { command: "fd foo -x rm" })).toBe(
+      false,
+    );
+  });
+
+  test("clusters many paths by directory", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 30; i++) lines.push(`./src/api/handler-${i}.ts`);
+    for (let i = 0; i < 18; i++) lines.push(`./src/ui/component-${i}.tsx`);
+    for (let i = 0; i < 12; i++) lines.push(`./test/fixtures/case-${i}.json`);
+
+    const input = lines.join("\n");
+    const out = findCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("60 paths in 3 directories");
+    expect(out).toContain("src/api/ (30):");
+    expect(out).toContain("... +22");
+  });
+});
+
+// ─── package managers ───────────────────────────────────────────────────────
+
+describe("package-manager compressor", () => {
+  test("is registered by default", () => {
+    expect(new CompressorRegistry().names()).toContain("package-manager");
+  });
+
+  test("matches package-manager install/list/audit commands", () => {
+    for (const command of [
+      "npm install",
+      "pnpm install",
+      "bun install",
+      "yarn add react",
+      "npm audit",
+      "bun pm ls",
+    ]) {
+      expect(packageManagerCompressor.matches("bash", { command })).toBe(true);
+    }
+  });
+
+  test("does NOT match shell compositions or test/build runners", () => {
+    expect(
+      packageManagerCompressor.matches("bash", { command: "npm test | cat" }),
+    ).toBe(false);
+    for (const command of ["yarn test", "npx vitest", "bun test", "npm run build"]) {
+      expect(packageManagerCompressor.matches("bash", { command })).toBe(false);
+    }
+  });
+
+  test("strips package-manager install/run boilerplate", () => {
+    const input = `> app@1.0.0 build
+> next build
+
+npm WARN deprecated inflight@1.0.6: This module is not supported
+npm WARN deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm notice New minor version of npm available
+Progress: resolved 10, reused 9, downloaded 1, added 0
+Progress: resolved 200, reused 199, downloaded 1, added 42
+added 412 packages, and audited 413 packages in 12s
+
+87 packages are looking for funding
+Run \`npm fund\` for details
+
+2 moderate severity vulnerabilities
+To address all issues, run: npm audit fix
+Build completed successfully
+`;
+    const out = packageManagerCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("package-manager: removed");
+    expect(out).toContain("deprecated: inflight@1.0.6, glob@7.2.3");
+    expect(out).toContain("Build completed successfully");
+    expect(out).not.toContain("Progress: resolved");
+  });
+
+  test("compresses pnpm dependency trees", () => {
+    const deps: string[] = ["dependencies:"];
+    for (let i = 0; i < 55; i++) deps.push(`├─ package-${i} 1.${i}.0`);
+    const input = deps.join("\n");
+    const out = packageManagerCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("55 dependencies listed");
+    expect(out).toContain("package-0@1.0.0");
+    expect(out).toContain("... +15 more");
+  });
+
+  test("does not treat test-result trees as dependency trees", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 30; i++) lines.push(`├─ src/test-${i}.test.ts PASS`);
+    lines.push("FAIL src/auth.test.ts > rejects invalid token");
+    lines.push("Error: expected 401, received 200");
+    const input = lines.join("\n");
+    const out = packageManagerCompressor.compress(input, CTX);
+    expect(out).toBe(input);
   });
 });
 

@@ -8,9 +8,11 @@ import type { Compressor } from "./types.ts";
 // instance.
 import { gitLogCompressor, gitStatusCompressor } from "./compressors/git.ts";
 import { lsCompressor } from "./compressors/ls.ts";
+import { findCompressor } from "./compressors/find.ts";
 import { rgCompressor } from "./compressors/rg.ts";
 import { pytestCompressor } from "./compressors/pytest.ts";
 import { cargoTestCompressor } from "./compressors/cargo.ts";
+import { packageManagerCompressor } from "./compressors/package-manager.ts";
 import { readToolCompressor } from "./tools/read.ts";
 import { grepToolCompressor } from "./tools/grep.ts";
 import { globToolCompressor } from "./tools/glob.ts";
@@ -27,7 +29,9 @@ export const DEFAULT_COMPRESSORS: readonly Compressor[] = [
   gitStatusCompressor,
   gitLogCompressor,
   lsCompressor,
+  findCompressor,
   rgCompressor,
+  packageManagerCompressor,
   pytestCompressor,
   cargoTestCompressor,
 ];

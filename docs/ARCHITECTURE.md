@@ -77,7 +77,9 @@ qtk-plugin/
     compressors/       ← per-command compressors
       git.ts             git status / log (2 distinct compressors)
       ls.ts              ls / ls -la
+      find.ts            find / fd path-list clustering
       rg.ts              ripgrep output (also covers `grep -r`)
+      package-manager.ts npm / pnpm / bun / yarn install/list noise
       cargo.ts           cargo build/test/clippy
       pytest.ts          pytest summaries
 
