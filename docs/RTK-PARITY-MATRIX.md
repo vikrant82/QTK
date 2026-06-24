@@ -49,8 +49,7 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 4. **All-tool result normalization** — partially done: normal output strings
    and MCP text content can be mutated safely; next add generic compressors for
    MCP/task text outputs.
-5. **Safe pre-call optimizations** — whitelist-only quiet flag rewrites with
-   `QTK_DISABLED=1` escape hatch.
+5. **Safe pre-call optimizations** — done for whitelist-only Bash rewrites (`pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`) with verbosity opt-outs and `QTK_DISABLED=1` / `QTK_REWRITE_DISABLED=1` escape hatches.
 6. **Model-facing secret redaction** — redact compressed and pass-through output
    before it reaches the model.
 7. **Analytics expansion** — partially done for successful compressions: `qtk gain` explains savings by compressor, tool, source, and result shape. Remaining: pass-through/missed-savings candidates, rewrites, and redactions.

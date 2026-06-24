@@ -92,7 +92,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
-[![tests](https://img.shields.io/badge/tests-177%20passing-brightgreen)](#tests)
+[![tests](https://img.shields.io/badge/tests-182%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![downstream of](https://img.shields.io/badge/downstream%20of-RTK-orange)](https://github.com/rtk-ai/rtk)
@@ -174,20 +174,24 @@ Throughput (concurrent batches of 50):
 
 ## What QTK does, in 60 seconds
 
-1. **opencode** runs a model-executed tool (e.g. `Bash("git status")`) and gets raw output back.
-2. The `tool.execute.after` hook fires. QTK can inspect and rewrite normal
+1. **opencode** prepares a model-executed tool call. QTK's optional
+   `tool.execute.before` hook applies only whitelist-safe Bash rewrites such as
+   `pytest -q`, `cargo --quiet`, or `npm install --silent`; verbosity/debug
+   flags opt out.
+2. **opencode** runs the tool (e.g. `Bash("git status")`) and gets raw output back.
+3. The `tool.execute.after` hook fires. QTK can inspect and rewrite normal
    opencode `output` strings and MCP text-content results before opencode
    flattens them for the model.
-3. QTK looks up a matching compressor:
+4. QTK looks up a matching compressor:
    - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
    - Then: the **11 specific registered TS compressors** (`git-status`, `git-log`, `ls`, `find`, `rg`, `package-manager`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
    - Last: `generic-text`, a conservative lossy fallback for recognizable MCP/task text shapes (path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs). Generic compression requires a raw tee file and is marked `lossy=true`.
-4. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
-5. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
-6. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
+5. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
+6. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
+7. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
 
-**The model never knows QTK exists.** No CLAUDE.md injection. No command rewriting. No special tool wrappers.
+**The model never knows QTK exists.** No CLAUDE.md injection. No special tool wrappers. Pre-call command rewriting is whitelist-only and can be disabled with `QTK_REWRITE_DISABLED=1` or globally with `QTK_DISABLED=1`.
 
 ---
 
@@ -447,7 +451,7 @@ QTK/
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 155 TS tests
+│   │   └── test/                   ← 160 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -468,9 +472,9 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 155 TS tests
+bun test                          # 160 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 177 passing, 0 failing
+# total: 182 passing, 0 failing
 ```
 
 Coverage:
