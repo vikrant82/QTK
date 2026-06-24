@@ -84,6 +84,7 @@ qtk-plugin/
       package-manager.ts npm / pnpm / bun / yarn install/list noise
       cargo.ts           cargo build/test/clippy
       pytest.ts          pytest summaries
+      generic-text.ts    last-resort lossy fallback for MCP/task text shapes
 
     tools/             ← compressors for built-in opencode tools
       read.ts            Read tool → outline if too long

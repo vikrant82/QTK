@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built-in `find` / `fd` compressor that clusters one-path-per-line results by containing directory.
 - Built-in `package-manager` compressor for `npm`, `npx`, `pnpm`, `pnpx`, `bun`, `bunx`, and `yarn` output noise.
 - Packaged RTK-compatible TOML filters now load by default, with project-local filters taking precedence.
-- Result-text normalizer for MCP text content arrays/resources, allowing future compressors to rewrite MCP text outputs before opencode flattens them.
+- Result-text normalizer for MCP text content arrays/resources, allowing compressors to rewrite MCP text outputs before opencode flattens them.
+- `generic-text` fallback compressor for recognizable MCP/task text shapes: path lists, diagnostics, JSON schema summaries, markdown outlines, and repeated/log-like lines. Generic output is marked `lossy=true` and requires a raw tee file.
 
 ## [0.3.1] — 2026-05-26
 

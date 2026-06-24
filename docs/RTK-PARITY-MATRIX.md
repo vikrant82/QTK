@@ -33,8 +33,8 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 | Build/lint | `tsc`, `eslint`, `biome`, `prettier`, `next build`, `make`, `mvn`, `gradle`, `swift`, `xcodebuild` | Several bundled filters active by default; no active TS for JS/TS build/lint | TS for `tsc`/`eslint` where needed | High |
 | Containers | `docker ps/images/logs/compose`, `kubectl`, `oc` | `kubectl -o yaml/json` active sidecar | DSL/TS for Docker; sidecar for heavy K8s structured output | Medium |
 | Infrastructure/cloud | `terraform`, `tofu`, `aws`, `gcloud`, `helm`, `ansible`, `pulumi`, `sops` | `terraform-plan` active sidecar; many bundled filters active by default | Sidecar for heavy JSON/YAML | Medium |
-| Network/system | `curl`, `wget`, `ping`, `df`, `du`, `ps`, `systemctl`, `rsync` | Some bundled filters active by default; no generic active fallback | Generic postprocessors | Medium |
-| Generic wrappers | `rtk err`, `rtk test`, `rtk summary`, `rtk log`, `rtk json` | Planned | Generic postprocessors after normal registry misses | High |
+| Network/system | `curl`, `wget`, `ping`, `df`, `du`, `ps`, `systemctl`, `rsync` | Some bundled filters active by default; generic fallback active for recognizable text shapes | Add more specific postprocessors as needed | Medium |
+| Generic wrappers | `rtk err`, `rtk test`, `rtk summary`, `rtk log`, `rtk json` | `generic-text` fallback active for path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs | Add RTK/OpenToken-inspired refinements and config | High |
 | Security/redaction | Secret-aware command shaping in RTK command families | Tee redaction only today | Global model-facing redaction pass | Critical |
 | Analytics/discovery | `rtk gain`, `discover`, session analytics | `qtk gain` exists for compression stats | Extend stats for source/family/result-shape, rewrites, redactions, misses | Medium |
 
@@ -45,9 +45,7 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 2. **Everyday TS compressors** — partially done for package managers and
    `find`/`fd`; remaining: JS test runners, `git diff/show`, `gh`,
    `tsc`/`eslint`, Docker.
-3. **Generic postprocessors** — ANSI strip, log entropy normalization, repeated
-   line dedupe, path/table grouping, long-line truncation, JSON schema summary,
-   and failure/error extraction.
+3. **Generic postprocessors** — partially done with `generic-text`: path/list grouping, diagnostics grouping, JSON schema summary, markdown outline, and repeated/log-like line dedupe. Remaining refinements: ANSI strip, richer entropy normalization, long-line truncation, and failure/error extraction.
 4. **All-tool result normalization** — partially done: normal output strings
    and MCP text content can be mutated safely; next add generic compressors for
    MCP/task text outputs.

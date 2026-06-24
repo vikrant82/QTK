@@ -8,7 +8,7 @@
 | Phase | Description                                                          | Status        |
 | ----- | -------------------------------------------------------------------- | ------------- |
 | 0     | Repo bootstrap                                                       | ✅ done       |
-| 1     | TS-only MVP plugin (11 compressors)                                  | ✅ done       |
+| 1     | TS-only MVP plugin (12 compressors, including generic-text fallback) | ✅ done       |
 | 2     | TOML filter DSL + RTK filter corpus bulk-imported (59/59)            | ✅ done       |
 | 3     | Rust sidecar (`qtk-core`) for heavy parsers                          | ✅ done       |
 | —     | Public release (github.com/qalarc/QTK + qalarc.com + blog)           | ✅ done       |

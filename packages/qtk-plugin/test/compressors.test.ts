@@ -15,6 +15,7 @@ import { rgCompressor } from "../src/compressors/rg.ts";
 import { pytestCompressor } from "../src/compressors/pytest.ts";
 import { cargoTestCompressor } from "../src/compressors/cargo.ts";
 import { packageManagerCompressor } from "../src/compressors/package-manager.ts";
+import { genericTextCompressor } from "../src/compressors/generic-text.ts";
 import { readToolCompressor } from "../src/tools/read.ts";
 import { grepToolCompressor } from "../src/tools/grep.ts";
 import { globToolCompressor } from "../src/tools/glob.ts";
@@ -351,6 +352,123 @@ Build completed successfully
   });
 });
 
+// ─── generic text fallback ──────────────────────────────────────────────────
+
+describe("generic-text compressor", () => {
+  test("is registered last by default", () => {
+    const names = new CompressorRegistry().names();
+    expect(names).toContain("generic-text");
+    expect(names.at(-1)).toBe("generic-text");
+  });
+
+  test("does NOT match mutation/control tools", () => {
+    for (const tool of [
+      "apply_patch",
+      "edit",
+      "write",
+      "todowrite",
+      "question",
+      "read",
+      "bash",
+      "serena_replace_content",
+      "serena_write_memory",
+    ]) {
+      expect(genericTextCompressor.matches(tool, {})).toBe(false);
+    }
+    expect(genericTextCompressor.matches("serena_find_symbol", {})).toBe(true);
+    expect(genericTextCompressor.matches("task", {})).toBe(true);
+  });
+
+  test("compresses MCP-style path lists", () => {
+    const paths: string[] = [];
+    for (let i = 0; i < 35; i++) paths.push(`packages/app/src/file-${i}.ts`);
+    for (let i = 0; i < 25; i++) paths.push(`packages/ui/src/comp-${i}.tsx`);
+
+    const input = paths.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("60 paths in 2 directories");
+  });
+
+  test("does not treat source code as a path list", () => {
+    const input = Array.from(
+      { length: 80 },
+      (_, i) => `const url${i} = api/client.divide(total / count);`,
+    ).join("\n");
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("compresses diagnostics grouped by file", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      lines.push(`src/api/user.ts:${10 + i}:5: error TS2322: Type mismatch ${i}`);
+    }
+    for (let i = 0; i < 8; i++) {
+      lines.push(`src/ui/view.tsx:${20 + i}:1: warning: unused import ${i}`);
+    }
+
+    const input = lines.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("20 diagnostics across 2 files");
+  });
+
+  test("compresses large JSON into a schema summary", () => {
+    const input = JSON.stringify({
+      items: Array.from({ length: 80 }, (_, i) => ({
+        id: i,
+        name: `item-${i}`,
+        nested: { enabled: i % 2 === 0, tags: ["a", "b", "c"] },
+      })),
+      metadata: { total: 80, page: 1, source: "test" },
+    });
+
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("json summary:");
+    expect(out).toContain("$.items: array(80)");
+  });
+
+  test("compresses markdown-like summaries into an outline", () => {
+    const sections: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      sections.push(`## Section ${i}`);
+      sections.push(`Long prose for section ${i} `.repeat(12));
+      sections.push(`- bullet ${i}A with details`);
+      sections.push(`- bullet ${i}B with details`);
+    }
+    const input = sections.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("text outline:");
+    expect(out).toContain("lead:");
+    expect(out).toContain("## Section 0");
+  });
+
+  test("preserves notable unique lines in repeated logs", () => {
+    const lines: string[] = [];
+    for (let i = 0; i < 80; i++) {
+      lines.push(
+        `2026-06-24T10:12:${String(i).padStart(2, "0")}Z pid=${1000 + i} request_id=req-${i} took=${20 + i}ms retrying`,
+      );
+    }
+    lines.push("ERROR repeated timeout from worker");
+    lines.push("ERROR repeated timeout from worker");
+    lines.push("ERROR failed to connect to database at src/db.ts:42");
+    const input = lines.join("\n");
+    const out = genericTextCompressor.compress(input, CTX);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("repeated after normalization");
+    expect(out.match(/ERROR repeated timeout/g)?.length).toBe(1);
+    expect(out).toContain("ERROR failed to connect");
+  });
+
+  test("passes through ambiguous prose below threshold", () => {
+    const input = "hello world\n".repeat(20);
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+});
+
 // ─── rg ─────────────────────────────────────────────────────────────────────
 
 describe("rg compressor", () => {
@@ -604,6 +722,19 @@ describe("SessionCache", () => {
     c.put(fp, "hash-A", "compressed-A");
     expect(c.lookup(fp, "hash-A", 60_000)).not.toBeNull();
     expect(c.lookup(fp, "hash-B", 60_000)).toBeNull();
+  });
+
+  test("stores optional lossy/tee metadata", () => {
+    const c = new SessionCache();
+    const fp = c.fingerprint("mcp", { id: "x" });
+    c.put(fp, "hash-A", "compressed-A", {
+      lossy: true,
+      teeFile: "/tmp/.opencode/qtk-tee/call.log",
+    });
+
+    const entry = c.lookup(fp, "hash-A", 60_000);
+    expect(entry?.lossy).toBe(true);
+    expect(entry?.teeFile).toBe("/tmp/.opencode/qtk-tee/call.log");
   });
 
   test("LRU prunes when over capacity", () => {
