@@ -24,7 +24,11 @@ CREATE TABLE IF NOT EXISTS compressions (
   was_cache_hit            INTEGER NOT NULL DEFAULT 0,
   tee_file                 TEXT,
   agent_read_tee           INTEGER NOT NULL DEFAULT 0,
-  duration_ms              INTEGER NOT NULL DEFAULT 0
+  duration_ms              INTEGER NOT NULL DEFAULT 0,
+  result_shape             TEXT NOT NULL DEFAULT 'output',
+  compressor_source        TEXT NOT NULL DEFAULT 'builtin',
+  is_lossy                 INTEGER NOT NULL DEFAULT 0,
+  is_generic               INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_session ON compressions(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool ON compressions(tool);
@@ -55,13 +59,28 @@ export class StatsTracker {
       this.db.exec("PRAGMA journal_mode = WAL;");
       this.db.exec("PRAGMA synchronous = NORMAL;");
       this.db.exec(SCHEMA);
+      ensureColumn(this.db, "result_shape", "TEXT NOT NULL DEFAULT 'output'");
+      ensureColumn(
+        this.db,
+        "compressor_source",
+        "TEXT NOT NULL DEFAULT 'builtin'",
+      );
+      ensureColumn(this.db, "is_lossy", "INTEGER NOT NULL DEFAULT 0");
+      ensureColumn(this.db, "is_generic", "INTEGER NOT NULL DEFAULT 0");
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_result_shape ON compressions(result_shape);",
+      );
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_compressor_source ON compressions(compressor_source);",
+      );
       this.insertStmt = this.db.prepare(`
         INSERT INTO compressions (
           ts, session_id, tool, command_head, compressor,
           original_bytes, compressed_bytes,
           original_tokens_est, compressed_tokens_est,
-          ratio, was_cache_hit, tee_file, duration_ms
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+          ratio, was_cache_hit, tee_file, duration_ms,
+          result_shape, compressor_source, is_lossy, is_generic
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `);
     } catch (e) {
       console.warn(`[qtk] stats: init failed for ${this.dbPath}:`, e);
@@ -87,6 +106,10 @@ export class StatsTracker {
         rec.outcome.wasCacheHit ? 1 : 0,
         rec.outcome.teeFile,
         rec.outcome.durationMs,
+        rec.outcome.resultShape ?? "output",
+        rec.outcome.compressorSource ?? "builtin",
+        rec.outcome.isLossy ? 1 : 0,
+        rec.outcome.isGeneric ? 1 : 0,
       );
     } catch (e) {
       console.warn(`[qtk] stats: insert failed:`, e);
@@ -102,6 +125,14 @@ export class StatsTracker {
     this.db = null;
     this.insertStmt = null;
   }
+}
+
+function ensureColumn(db: Database, name: string, definition: string): void {
+  const rows = db.query("PRAGMA table_info(compressions)").all() as Array<{
+    name: string;
+  }>;
+  if (rows.some((row) => row.name === name)) return;
+  db.exec(`ALTER TABLE compressions ADD COLUMN ${name} ${definition};`);
 }
 
 /**

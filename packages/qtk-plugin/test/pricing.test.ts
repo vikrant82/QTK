@@ -206,6 +206,42 @@ describe("savings-export — SavingsExporter", () => {
     expect(snap.by_compressor[1]!.name).toBe("small-saver");
   });
 
+  test("groups savings by tool, source, and result shape", () => {
+    const exp = new SavingsExporter(tmpRoot, "test-session", 1_000_000);
+    exp.record(
+      {
+        compressor: "generic-text",
+        compressorSource: "generic",
+        resultShape: "mcp_text_content",
+        originalBytes: 1000,
+        compressedBytes: 100,
+        originalTokensEst: 250,
+        compressedTokensEst: 25,
+        ratio: 0.1,
+        durationMs: 1,
+        wasCacheHit: false,
+        teeFile: ".opencode/qtk-tee/call.log",
+      },
+      {
+        tool: "serena_get_diagnostics_for_file",
+        compressorSource: "generic",
+        resultShape: "mcp_text_content",
+      },
+    );
+
+    const snap = exp.snapshot();
+    expect(snap.by_tool[0]).toMatchObject({
+      name: "serena_get_diagnostics_for_file",
+      calls: 1,
+      tokens_saved: 225,
+    });
+    expect(snap.by_source[0]).toMatchObject({ name: "generic", calls: 1 });
+    expect(snap.by_result_shape[0]).toMatchObject({
+      name: "mcp_text_content",
+      calls: 1,
+    });
+  });
+
   test("flushNow writes the JSON file atomically with 0o644", async () => {
     const exp = new SavingsExporter(tmpRoot, "test-session-xyz", 1_000_000);
     exp.setModelId("claude-sonnet-4-5");
@@ -230,7 +266,7 @@ describe("savings-export — SavingsExporter", () => {
     expect(stat.mode & 0o777).toBe(0o644);
 
     const snap = JSON.parse(readFileSync(path, "utf-8")) as SavingsSnapshot;
-    expect(snap.schema).toBe(1);
+    expect(snap.schema).toBe(2);
     expect(snap.session_id).toBe("test-session-xyz");
     expect(snap.totals.tokens_saved).toBe(1050);
     expect(snap.totals.model).toBe("claude-sonnet-4-5");

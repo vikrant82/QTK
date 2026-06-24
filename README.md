@@ -65,6 +65,20 @@ By compressor:
   git-status          147       294k        58k        59k      $0.18     19.7%
   ...
 
+By tool:
+  bash                314       1.0M       312k       172k      $0.52     31.0%
+  read                283       1.2M       312k       217k      $0.65     26.5%
+  task                 18       210k        89k        30k      $0.09     42.3%
+
+By source:
+  builtin             402       1.5M       420k       270k      $0.81     28.0%
+  tool                501       1.8M       510k       320k      $0.96     28.3%
+  generic              18       210k        89k        30k      $0.09     42.3%
+
+By result shape:
+  output             4854       5.0M       1.2M       955k      $2.86     25.0%
+  mcp_text_content     18       210k        89k        30k      $0.09     42.3%
+
 Top 10 commands by tokens saved:
   command                            calls  tok-saved   USD-saved  avg-ratio
   read /path/to/...                    283       217k      $0.65     26.5%
@@ -78,7 +92,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
-[![tests](https://img.shields.io/badge/tests-174%20passing-brightgreen)](#tests)
+[![tests](https://img.shields.io/badge/tests-177%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![downstream of](https://img.shields.io/badge/downstream%20of-RTK-orange)](https://github.com/rtk-ai/rtk)
@@ -314,7 +328,7 @@ every 10 seconds. The file looks like:
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "ts": 1716700000000,
   "session_id": "...",
   "totals": {
@@ -433,7 +447,7 @@ QTK/
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 152 TS tests
+│   │   └── test/                   ← 155 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -454,9 +468,9 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 152 TS tests
+bun test                          # 155 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 174 passing, 0 failing
+# total: 177 passing, 0 failing
 ```
 
 Coverage:

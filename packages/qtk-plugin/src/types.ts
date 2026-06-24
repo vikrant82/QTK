@@ -42,6 +42,10 @@ export interface CompressorContext {
 /** Result of attempting to compress an output. */
 export interface CompressionOutcome {
   readonly compressor: string;
+  readonly compressorSource?: string;
+  readonly resultShape?: string;
+  readonly isLossy?: boolean;
+  readonly isGeneric?: boolean;
   readonly originalBytes: number;
   readonly compressedBytes: number;
   readonly originalTokensEst: number;

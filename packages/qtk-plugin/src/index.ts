@@ -33,6 +33,7 @@ import {
 } from "./sidecar/compressors.ts";
 import { SavingsExporter } from "./savings-export.ts";
 import { extractResultText } from "./result-text.ts";
+import { classifyCompressorSource, isGenericCompressor } from "./metrics.ts";
 import type { CompressionOutcome } from "./types.ts";
 
 export const QtkPlugin: Plugin = async ({ directory }) => {
@@ -257,6 +258,10 @@ async function processCall(
     target.write(cachedOutput);
     const cacheOutcome: CompressionOutcome = {
       compressor: "session-cache",
+      compressorSource: "session-cache",
+      resultShape: target.shape,
+      isLossy: cacheHit.lossy ?? false,
+      isGeneric: false,
       originalBytes: raw.length,
       compressedBytes: cachedOutput.length,
       originalTokensEst: estimateTokens(raw),
@@ -264,7 +269,7 @@ async function processCall(
       ratio: cachedOutput.length / raw.length,
       durationMs: 0,
       wasCacheHit: true,
-      teeFile: null,
+      teeFile: cacheHit.teeFile ?? null,
     };
     if (ctx.stats) {
       ctx.stats.log({
@@ -274,7 +279,11 @@ async function processCall(
         outcome: cacheOutcome,
       });
     }
-    ctx.savingsExporter.record(cacheOutcome);
+    ctx.savingsExporter.record(cacheOutcome, {
+      tool: input.tool,
+      compressorSource: cacheOutcome.compressorSource,
+      resultShape: cacheOutcome.resultShape,
+    });
     return;
   }
 
@@ -356,7 +365,7 @@ async function processCall(
   if (compressed === raw) return;
 
   const ratio = compressed.length / raw.length;
-  const isLossyGeneric = compressorName.startsWith("generic-");
+  const isLossyGeneric = isGenericCompressor(compressorName);
 
   // Decide whether to tee
   let teeFile: string | null = null;
@@ -391,6 +400,10 @@ async function processCall(
   // Log to stats + savings export (always — exporter is required)
   const outcome: CompressionOutcome = {
     compressor: compressorName,
+    compressorSource: classifyCompressorSource(compressorName),
+    resultShape: target.shape,
+    isLossy: isLossyGeneric,
+    isGeneric: isGenericCompressor(compressorName),
     originalBytes: raw.length,
     compressedBytes: compressedOutput.length,
     originalTokensEst: estimateTokens(raw),
@@ -408,7 +421,11 @@ async function processCall(
       outcome,
     });
   }
-  ctx.savingsExporter.record(outcome);
+  ctx.savingsExporter.record(outcome, {
+    tool: input.tool,
+    compressorSource: outcome.compressorSource,
+    resultShape: outcome.resultShape,
+  });
 }
 
 function extractCommandHead(

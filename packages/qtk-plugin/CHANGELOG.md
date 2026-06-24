@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Packaged RTK-compatible TOML filters now load by default, with project-local filters taking precedence.
 - Result-text normalizer for MCP text content arrays/resources, allowing compressors to rewrite MCP text outputs before opencode flattens them.
 - `generic-text` fallback compressor for recognizable MCP/task text shapes: path lists, diagnostics, JSON schema summaries, markdown outlines, and repeated/log-like lines. Generic output is marked `lossy=true` and requires a raw tee file.
+- Expanded analytics metadata for successful compressions: result shape, compressor source, generic/lossy flags, `qtk gain` breakdowns by tool/source/result shape, and JSON savings export groups.
 
 ## [0.3.1] — 2026-05-26
 

@@ -359,10 +359,10 @@ ratio: 0.603 saved: 39.7%
 
 ```
 bun test v1.3.14
- 152 pass
+ 155 pass
  0 fail
- 368 expect() calls
-Ran 152 tests across 8 files.
+ 381 expect() calls
+Ran 155 tests across 9 files.
 ```
 
 ### Coverage by area
