@@ -176,7 +176,7 @@ Throughput (concurrent batches of 50):
 
 1. **opencode** prepares a model-executed tool call. QTK's optional
    `tool.execute.before` hook applies only whitelist-safe Bash rewrites such as
-   `pytest -q`, `cargo --quiet`, or `npm install --silent`; verbosity/debug
+   `pytest -q`, `cargo --quiet`, `npm install --silent`, or Gradle `--quiet --console=plain`; verbosity/debug
    flags opt out.
 2. **opencode** runs the tool (e.g. `Bash("git status")`) and gets raw output back.
 3. The `tool.execute.after` hook fires. QTK can inspect and rewrite normal
