@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Result-text normalizer for MCP text content arrays/resources, allowing compressors to rewrite MCP text outputs before opencode flattens them.
 - `generic-text` fallback compressor for recognizable MCP/task text shapes: path lists, diagnostics, JSON schema summaries, markdown outlines, and repeated/log-like lines. Generic output is marked `lossy=true` and requires a raw tee file.
 - Expanded analytics metadata for successful compressions: result shape, compressor source, generic/lossy flags, `qtk gain` breakdowns by tool/source/result shape, and JSON savings export groups.
+- Conservative `tool.execute.before` command rewrites for Bash: `pytest -q`, `cargo --quiet`, and `npm`/`pnpm install --silent`, with verbosity flags and `QTK_REWRITE_DISABLED=1` escape hatch.
 
 ## [0.3.1] — 2026-05-26
 

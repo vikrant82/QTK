@@ -47,6 +47,11 @@ compression: 60-99% reduction on `git status`, `git log`, `ls -la`, `find`,
 and recognizable MCP/task text shapes via the tee-backed `generic-text`
 fallback.
 
+It also has a conservative `tool.execute.before` hook for Bash-only quiet
+rewrites such as `pytest -q`, `cargo --quiet`, and `npm`/`pnpm install --silent`.
+Set `QTK_REWRITE_DISABLED=1` to disable only those rewrites, or
+`QTK_DISABLED=1` to disable the plugin.
+
 The package also loads bundled RTK-compatible TOML filters by default. For
 per-project custom compressors or overrides, drop TOML files into
 `.opencode/qtk/filters/`; project filters take precedence over bundled filters

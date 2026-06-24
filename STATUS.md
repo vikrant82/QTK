@@ -359,10 +359,10 @@ ratio: 0.603 saved: 39.7%
 
 ```
 bun test v1.3.14
- 155 pass
+ 160 pass
  0 fail
- 381 expect() calls
-Ran 155 tests across 9 files.
+ 403 expect() calls
+Ran 160 tests across 10 files.
 ```
 
 ### Coverage by area
@@ -443,6 +443,7 @@ QTK/
 │   │   │   ├── circuit-breaker.ts
 │   │   │   ├── registry.ts          ← + prepend/replaceUserCompressors for DSL
 │   │   │   ├── result-text.ts       ← normal/MCP text extraction + mutation
+│   │   │   ├── rewrite.ts           ← safe tool.execute.before quiet rewrites
 │   │   │   ├── compressors/         ← Phase 1/2 hand-written compressors
 │   │   │   │   ├── git.ts
 │   │   │   │   ├── ls.ts
@@ -468,6 +469,7 @@ QTK/
 │   │   ├── test/
 │   │   │   ├── compressors.test.ts  ← 61 tests (Phase 1/2/4 compressors)
 │   │   │   ├── dsl.test.ts          ← 39 tests (Phase 2 — NEW)
+│   │   │   ├── rewrite.test.ts       ← safe pre-call rewrite tests
 │   │   │   ├── result-text.test.ts   ← MCP result-shape tests
 │   │   │   ├── plugin-hook.test.ts   ← opencode hook compatibility tests
 │   │   │   └── fixtures/

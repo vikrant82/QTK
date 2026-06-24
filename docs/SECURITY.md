@@ -63,7 +63,7 @@ verify.
 
 The model writes `git status` → the bash tool runs `git status` → QTK sees
 the output of `git status`. QTK does not change `args.command` (that's the
-`tool.execute.before` hook, which QTK doesn't use). The model's intent is
+`tool.execute.before` hook; QTK now uses a very small Bash-only whitelist for quiet flags). The model's intent is
 preserved exactly.
 
 **Why this matters:** if QTK had a bug in command rewriting, it could

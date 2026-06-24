@@ -380,7 +380,7 @@ Tracking design decisions and their justifications.
 
 | Date       | Decision                                                    | Justification                                                                                                |
 | ---------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 2026-05-20 | Compress on `tool.execute.after`, not `tool.execute.before` | See ARCHITECTURE.md §1 — output-side compression covers all tools, zero prompt overhead, no double-wrap risk |
+| 2026-05-20 | Compress on `tool.execute.after`; keep `tool.execute.before` whitelist-only | Output-side compression covers tool results; before-hook use is limited to safe quiet-flag rewrites |
 | 2026-05-20 | TypeScript Phase 1, Rust sidecar Phase 3                    | In-process JS wins on latency despite slower regex; Rust only for genuinely expensive parsers                |
 | 2026-05-20 | No network code, ever                                       | Strongest possible privacy story, removes entire class of risks                                              |
 | 2026-05-20 | Tee files 0o600, dir 0o700, no env override                 | Direct response to RTK audit findings §3.1 and §3.2                                                          |

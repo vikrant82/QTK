@@ -34,10 +34,16 @@ import {
 import { SavingsExporter } from "./savings-export.ts";
 import { extractResultText } from "./result-text.ts";
 import { classifyCompressorSource, isGenericCompressor } from "./metrics.ts";
+import { isTruthyEnv, rewriteCommand } from "./rewrite.ts";
 import type { CompressionOutcome } from "./types.ts";
 
 export const QtkPlugin: Plugin = async ({ directory }) => {
   const projectRoot = directory ?? process.cwd();
+  if (isTruthyEnv(process.env.QTK_DISABLED)) {
+    console.log("[qtk] disabled via QTK_DISABLED");
+    return {};
+  }
+
   const config = await loadConfig(projectRoot);
 
   if (!config.enabled) {
@@ -169,6 +175,27 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   });
 
   return {
+    "tool.execute.before": async (input, output) => {
+      try {
+        if (
+          isTruthyEnv(process.env.QTK_DISABLED) ||
+          isTruthyEnv(process.env.QTK_REWRITE_DISABLED)
+        ) {
+          return;
+        }
+        if (input.tool.toLowerCase() !== "bash") return;
+        if (!isRecord(output.args) || typeof output.args.command !== "string") {
+          return;
+        }
+        const rewritten = rewriteCommand(output.args.command);
+        if (!rewritten) return;
+        output.args.command = rewritten.command;
+        console.log(`[qtk] rewrite ${rewritten.rule}: ${rewritten.command}`);
+      } catch (e) {
+        console.warn("[qtk] tool.execute.before failed:", e);
+      }
+    },
+
     "tool.execute.after": async (input, output) => {
       // Defensive: never throw out of this hook.
       try {
