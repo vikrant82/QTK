@@ -45,9 +45,10 @@ outputs to a compact form before the model sees them. Typical
 compression: 60-99% reduction on `git status`, `git log`, `ls -la`, `rg`,
 `pytest`, `cargo`, `Read`, `Grep`, `Glob` tool calls.
 
-For per-project custom compressors, drop TOML files into
-`.opencode/qtk/filters/`. Format is intentionally compatible with
-RTK's filter DSL.
+The package also loads bundled RTK-compatible TOML filters by default. For
+per-project custom compressors or overrides, drop TOML files into
+`.opencode/qtk/filters/`; project filters take precedence over bundled filters
+and built-ins. The format is intentionally compatible with RTK's filter DSL.
 
 For heavy parsers (JUnit XML, terraform plan, kubectl YAML/JSON, cargo
 JSON), install the optional `qtk-core` Rust binary too. The plugin

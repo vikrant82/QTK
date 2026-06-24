@@ -21,8 +21,8 @@ JavaScript skills needed; no rebuild of QTK; no PR upstream.
 
 The format is designed to be compatible with RTK's TOML filter format
 (Apache 2.0). `scripts/import-rtk-filters.ts` imports RTK filters into
-`packages/qtk-filters/imported/`; loading those packaged filters automatically
-is tracked in the parity roadmap.
+`packages/qtk-filters/imported/`; the plugin packages those imported filters
+and loads them by default before built-in compressors.
 
 ---
 
@@ -36,9 +36,19 @@ is tracked in the parity roadmap.
   └─ my-custom-script.toml
 ```
 
-Files are scanned at session start AND hot-reloaded on save during a
-session. File name is just for organisation — the `command` key inside is
+Project-local files are scanned at session start AND hot-reloaded on save during
+a session. File name is just for organisation — the `command` key inside is
 what matters for matching.
+
+Bundled imported filters are loaded from the package at startup. Project-local
+filters take precedence over bundled filters, and bundled filters take
+precedence over built-in compressors.
+
+```toml
+[qtk.filters]
+bundled = true  # default: load packaged RTK-compatible filters
+project = true  # default: load .opencode/qtk/filters/*.toml
+```
 
 ---
 
@@ -52,9 +62,9 @@ The command(s) this filter applies to. Supports:
 - Wildcard: `command = "kubectl get *"`
 - Multiple: `command = ["docker ps", "docker container ls"]`
 
-The first filter whose `command` matches a tool call wins. Filters in
-`.opencode/qtk/filters/` override any built-in compressor with the same
-match.
+The first filter whose `command` matches a tool call wins. Project filters in
+`.opencode/qtk/filters/` override bundled filters and built-in compressors with
+the same match.
 
 ### `pass_through_if` (optional)
 

@@ -4,7 +4,7 @@ import { describe, test, expect } from "bun:test";
 import { parseFilterToml } from "../src/dsl/parser.ts";
 import { validateFilterSpec } from "../src/dsl/spec.ts";
 import { compileFilter } from "../src/dsl/runtime.ts";
-import { loadFilters } from "../src/dsl/loader.ts";
+import { loadBundledFilters, loadFilters } from "../src/dsl/loader.ts";
 import { FilterParseError } from "../src/dsl/types.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -472,6 +472,21 @@ describe("DSL runtime: safety", () => {
 // ─── Loader ─────────────────────────────────────────────────────────────────
 
 describe("DSL loader", () => {
+  test("loads bundled imported filters from the package checkout", async () => {
+    const result = await loadBundledFilters();
+    expect(result.errors.length).toBe(0);
+    expect(result.filters.length).toBeGreaterThan(0);
+    expect(new Set(result.filters.map((f) => f.spec.name)).size).toBe(
+      result.filters.length,
+    );
+    expect(result.filters.some((f) => f.spec.name === "bundled:biome")).toBe(
+      true,
+    );
+    expect(
+      result.filters.some((f) => f.compressor.name === "dsl:bundled:biome"),
+    ).toBe(true);
+  });
+
   test("loads filters from filter directory", async () => {
     const root = mkdtempSync(join(tmpdir(), "qtk-dsl-test-"));
     try {
@@ -490,6 +505,24 @@ describe("DSL loader", () => {
       expect(result.errors.length).toBe(0);
       expect(result.filters.length).toBe(1);
       expect(result.filters[0]!.spec.name).toBe("git-short");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("can namespace loaded project filters", async () => {
+    const root = mkdtempSync(join(tmpdir(), "qtk-dsl-test-"));
+    try {
+      const filterDir = join(root, ".opencode", "qtk", "filters");
+      mkdirSync(filterDir, { recursive: true });
+      writeFileSync(join(filterDir, "custom.toml"), `command = "custom"\n`);
+
+      const result = await loadFilters(root, undefined, {
+        namespace: "project",
+      });
+      expect(result.errors.length).toBe(0);
+      expect(result.filters[0]!.spec.name).toBe("project:custom");
+      expect(result.filters[0]!.compressor.name).toBe("dsl:project:custom");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
