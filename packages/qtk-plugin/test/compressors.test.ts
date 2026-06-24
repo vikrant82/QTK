@@ -19,6 +19,7 @@ import { globToolCompressor } from "../src/tools/glob.ts";
 import { SessionCache } from "../src/cache.ts";
 import { CircuitBreaker } from "../src/circuit-breaker.ts";
 import { _internal as teeInternal } from "../src/tee.ts";
+import { CompressorRegistry } from "../src/registry.ts";
 import type { Compressor } from "../src/types.ts";
 
 const CTX = { args: {}, cwd: "/tmp", config: {} };
@@ -151,6 +152,10 @@ nothing to commit, working tree clean
 // ─── git log ────────────────────────────────────────────────────────────────
 
 describe("git-log compressor", () => {
+  test("is registered by default", () => {
+    expect(new CompressorRegistry().names()).toContain("git-log");
+  });
+
   test("matches `git log`", () => {
     expect(gitLogCompressor.matches("bash", { command: "git log" })).toBe(true);
     expect(gitLogCompressor.matches("bash", { command: "git log -n 10" })).toBe(

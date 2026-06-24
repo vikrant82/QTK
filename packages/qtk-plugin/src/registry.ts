@@ -6,7 +6,7 @@ import type { Compressor } from "./types.ts";
 
 // Compressors imported here — each is a small module exporting a single
 // instance.
-import { gitStatusCompressor } from "./compressors/git.ts";
+import { gitLogCompressor, gitStatusCompressor } from "./compressors/git.ts";
 import { lsCompressor } from "./compressors/ls.ts";
 import { rgCompressor } from "./compressors/rg.ts";
 import { pytestCompressor } from "./compressors/pytest.ts";
@@ -25,6 +25,7 @@ export const DEFAULT_COMPRESSORS: readonly Compressor[] = [
   globToolCompressor,
   // Then shell command compressors
   gitStatusCompressor,
+  gitLogCompressor,
   lsCompressor,
   rgCompressor,
   pytestCompressor,

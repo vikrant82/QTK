@@ -8,14 +8,14 @@
 >
 > [**RTK (Rust Token Killer)**](https://github.com/rtk-ai/rtk) is the
 > mature, production-grade project for deterministic token compression.
-> 54k+ GitHub stars, 185 releases, supports 13 AI coding tools across
-> Linux/macOS/Windows, ships a 100+ command filter corpus. Built by
+> 65k+ GitHub stars, 200+ releases, supports 14 AI coding tools across
+> Linux/macOS/Windows, ships 100+ supported command filters. Built by
 > Patrick Szymkowiak, Florian Bruniaux, Adrien Eppling and the RTK
 > community. Licensed Apache-2.0.
 >
 > **If you're using Claude Code, Cursor, Gemini CLI, GitHub Copilot,
-> Codex, Windsurf, Cline, Roo Code, OpenClaw, Hermes, Kilo Code, or
-> Google Antigravity — use [RTK](https://rtk-ai.app).**
+> Codex, Windsurf, Cline, Roo Code, OpenCode, OpenClaw, Pi, Hermes,
+> Kilo Code, or Google Antigravity — use [RTK](https://rtk-ai.app).**
 >
 > **QTK is a narrow opencode-specific spiritual sibling.** It exists
 > because opencode's plugin surface lets us hook `tool.execute.after`
@@ -39,8 +39,8 @@ opencode.
 
 ```
 [qtk] sidecar: qtk-core binary not found; using TS-only
-[qtk] active — 8 compressors registered
-[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, ls, rg, pytest, cargo
+[qtk] active — 9 compressors registered
+[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, rg, pytest, cargo
 
 # If qtk-core is installed, QTK also enables 4 async sidecar compressors:
 # sidecar:terraform-plan, sidecar:kubectl-structured,
@@ -102,8 +102,8 @@ mechanically-compressible tool output:
 hand-written parsers reduce these outputs by 60–99% with zero quality loss
 for the model.
 
-[RTK](https://github.com/rtk-ai/rtk) proved the thesis at scale with a
-100+ filter corpus. QTK is the in-agent version of the same idea:
+[RTK](https://github.com/rtk-ai/rtk) proved the thesis at scale with
+100+ supported commands. QTK is the in-agent version of the same idea:
 
 | | RTK | QTK |
 |---|---|---|
@@ -168,7 +168,7 @@ Throughput (concurrent batches of 50):
 3. QTK looks up a matching compressor:
    - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
-   - Then: the **8 registered built-in TS compressors** (`git-status`, `ls`, `rg`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
+   - Then: the **9 registered built-in TS compressors** (`git-status`, `git-log`, `ls`, `rg`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
 4. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
 5. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
 6. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
@@ -179,11 +179,12 @@ Throughput (concurrent batches of 50):
 
 ## What's in here
 
-### Phase 1: 8 registered built-in TypeScript compressors
+### Phase 1: 9 registered built-in TypeScript compressors
 
 Hand-written, sub-100µs median latency:
 
 - **`git status`** — porcelain → `branch=main (up to date with origin/main)\nstaged (3): modified foo.ts, modified bar.ts, new baz.ts\nunstaged (1): modified qux.ts`
+- **`git log`** — multi-line commits → one-liners with `<hash> <date> <author>: <subject>`
 - **`ls -la`** — long-format → sorted by type with size/mtime; falls back to grouped-by-extension for large flat listings
 - **`rg`** / **`grep -r`** — `5 matches across 3 files:\n  src/foo.ts (3 matches)\n  L17: ...`
 - **`pytest`** — passing → just the summary; failing → keeps FAILED lines + first 8 trace lines
@@ -392,7 +393,7 @@ opencode process
       │     ├─ Hot-reloaded on file change (250ms debounce)
       │     └─ Pipeline: strip → dedupe → match → group_by → template → truncate
       ├─ Built-in TS compressors (Phase 1)
-      │     git-status, ls, rg, pytest, cargo,
+      │     git-status, git-log, ls, rg, pytest, cargo,
       │     tool-read, tool-grep, tool-glob
       ├─ Tee writer (.opencode/qtk-tee/<call-id>.log, 0o600)
       ├─ SQLite stats (.opencode/qtk-stats.sqlite)
