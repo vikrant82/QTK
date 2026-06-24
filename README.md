@@ -78,7 +78,7 @@ Extrapolated:     ~140k tokens/day · $0.42/day
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
-[![tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)](#tests)
+[![tests](https://img.shields.io/badge/tests-161%20passing-brightgreen)](#tests)
 [![bench](https://img.shields.io/badge/p99%20latency-%3C1.2ms-brightgreen)](#benchmarks)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![downstream of](https://img.shields.io/badge/downstream%20of-RTK-orange)](https://github.com/rtk-ai/rtk)
@@ -109,7 +109,7 @@ for the model.
 |---|---|---|
 | **Where it lives** | External CLI binary | opencode plugin (in-process) |
 | **Hook surface** | Shell command wrapping | opencode `tool.execute.after` for model-executed tools |
-| **Default compressors** | Bash command filters | Bash command outputs + `Read`/`Grep`/`Glob`; MCP is observed by the hook but not compressed by default today |
+| **Default compressors** | Bash command filters | Bash command outputs + `Read`/`Grep`/`Glob`; MCP text results can now be mutated safely, with generic MCP compressors planned next |
 | **Integration cost** | Hundreds of tokens in CLAUDE.md so the model knows to call `rtk <cmd>` | Zero — the model is unaware QTK exists |
 | **Per-call overhead** | Subprocess fork per bash invocation (5–15 ms) | In-process TS (median 30µs) |
 | **Heavy parsers** | Same Rust binary as everything | Optional `qtk-core` sidecar, fires only for XML/YAML/JSON |
@@ -161,10 +161,9 @@ Throughput (concurrent batches of 50):
 ## What QTK does, in 60 seconds
 
 1. **opencode** runs a model-executed tool (e.g. `Bash("git status")`) and gets raw output back.
-2. The `tool.execute.after` hook fires. QTK can inspect the result. For normal
-   opencode tools this includes a mutable string `output`; MCP tools currently
-   hit the hook before opencode flattens MCP content into that string form, so
-   they pass through unless QTK learns that result shape.
+2. The `tool.execute.after` hook fires. QTK can inspect and rewrite normal
+   opencode `output` strings and MCP text-content results before opencode
+   flattens them for the model.
 3. QTK looks up a matching compressor:
    - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
@@ -433,7 +432,7 @@ QTK/
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 133 TS tests
+│   │   └── test/                   ← 139 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -454,9 +453,9 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 133 TS tests
+bun test                          # 139 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 155 passing, 0 failing
+# total: 161 passing, 0 failing
 ```
 
 Coverage:

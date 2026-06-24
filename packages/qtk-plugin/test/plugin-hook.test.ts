@@ -60,4 +60,62 @@ describe("opencode tool hook compatibility", () => {
 
     expect(output.output).toContain("<qtk-compressed compressor=git-status");
   });
+
+  test("compresses MCP text content arrays in place", async () => {
+    const raw = Array.from(
+      { length: 40 },
+      (_, i) => `src/service/file-${i}.ts`,
+    ).join("\n");
+    const output = {
+      content: [
+        { type: "text", text: raw },
+        { type: "image", mimeType: "image/png", data: "abc" },
+      ],
+      metadata: {},
+    };
+
+    await _internal.processCall(
+      { tool: "mcp_find", sessionID: "session-test", callID: "call-test" },
+      output,
+      {
+        ...processContext(),
+        registry: new CompressorRegistry([
+          {
+            name: "mcp-path-list",
+            category: "test",
+            matches: (tool) => tool === "mcp_find",
+            compress: (text) => `paths=${text.split("\n").length}`,
+          },
+        ]),
+      },
+    );
+
+    expect(output.content[0]).toEqual({
+      type: "text",
+      text: expect.stringContaining("<qtk-compressed compressor=mcp-path-list"),
+    });
+    expect(output.content[0]!.text).toContain("paths=40");
+    expect(output.content[1]).toEqual({
+      type: "image",
+      mimeType: "image/png",
+      data: "abc",
+    });
+  });
+
+  test("leaves non-text MCP content unchanged", async () => {
+    const output = {
+      content: [{ type: "image", mimeType: "image/png", data: "abc" }],
+      metadata: {},
+    };
+
+    await _internal.processCall(
+      { tool: "mcp_image", sessionID: "session-test", callID: "call-test" },
+      output,
+      processContext(),
+    );
+
+    expect(output.content).toEqual([
+      { type: "image", mimeType: "image/png", data: "abc" },
+    ]);
+  });
 });
