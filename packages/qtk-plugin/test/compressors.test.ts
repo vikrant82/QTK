@@ -378,6 +378,8 @@ describe("generic-text compressor", () => {
       "codebase-memory-mcp_get_code_snippet",
       "codebase-memory-mcp_search_code",
       "octocode_localget",
+      "octocode_githubgetfilecontent",
+      "octocode_packagesearch",
     ]) {
       expect(genericTextCompressor.matches(tool, {})).toBe(false);
     }
