@@ -9,7 +9,11 @@
 import { watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
 import { resolve } from "node:path";
-import { loadFilters, type LoadResult } from "./loader.ts";
+import {
+  loadFilters,
+  type FilterLoadOptions,
+  type LoadResult,
+} from "./loader.ts";
 import { existsSync, mkdirSync } from "node:fs";
 
 const DEBOUNCE_MS = 250;
@@ -31,6 +35,7 @@ export function watchFilters(
   projectRoot: string,
   filterDir: string,
   onReload: (result: LoadResult) => void,
+  options: FilterLoadOptions = {},
 ): FilterWatcher {
   const dir = resolve(projectRoot, filterDir);
 
@@ -53,7 +58,7 @@ export function watchFilters(
     pending = setTimeout(async () => {
       pending = null;
       try {
-        const result = await loadFilters(projectRoot, filterDir);
+        const result = await loadFilters(projectRoot, filterDir, options);
         if (!stopped) onReload(result);
       } catch (e) {
         console.warn("[qtk] filter reload failed:", e);

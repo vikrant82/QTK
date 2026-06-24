@@ -80,6 +80,13 @@ export interface QtkConfig {
     readonly database: string;
   };
 
+  readonly filters: {
+    /** Load RTK-compatible filters bundled with the package. */
+    readonly bundled: boolean;
+    /** Load project-local filters from .opencode/qtk/filters. */
+    readonly project: boolean;
+  };
+
   /** Per-compressor overrides. Free-form map; each compressor reads its own keys. */
   readonly compressors: Record<string, Record<string, unknown>>;
 

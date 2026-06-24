@@ -18,7 +18,12 @@ import { StatsTracker, commandHead } from "./stats.ts";
 import { CircuitBreaker } from "./circuit-breaker.ts";
 import { loadConfig } from "./config.ts";
 import { estimateTokens } from "./estimator.ts";
-import { loadFilters, DEFAULT_FILTER_DIR } from "./dsl/loader.ts";
+import {
+  loadFilters,
+  loadBundledFilters,
+  DEFAULT_FILTER_DIR,
+  type LoadResult,
+} from "./dsl/loader.ts";
 import { watchFilters } from "./dsl/watcher.ts";
 import { SidecarClient } from "./sidecar/client.ts";
 import { locateQtkCore } from "./sidecar/locator.ts";
@@ -42,10 +47,22 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   const cache = new SessionCache();
   const breaker = new CircuitBreaker();
 
-  // Load TOML DSL filters from .opencode/qtk/filters/*.toml — these run
-  // BEFORE built-in compressors (first-match wins) so users can override.
+  // Load TOML DSL filters. Project-local filters run before bundled filters,
+  // and bundled filters run before built-in compressors (first-match wins).
   try {
-    const { filters, errors } = await loadFilters(projectRoot);
+    let bundledResult: LoadResult = { filters: [], errors: [] };
+    let projectResult: LoadResult = { filters: [], errors: [] };
+
+    if (config.filters.bundled) {
+      bundledResult = await loadBundledFilters();
+    }
+    if (config.filters.project) {
+      projectResult = await loadFilters(projectRoot, DEFAULT_FILTER_DIR, {
+        namespace: "project",
+      });
+    }
+
+    const filters = [...projectResult.filters, ...bundledResult.filters];
     if (filters.length > 0) {
       registry.prepend(filters.map((f) => f.compressor));
       console.log(
@@ -54,22 +71,33 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
           .join(", ")}`,
       );
     }
-    for (const e of errors) {
+    for (const e of [...projectResult.errors, ...bundledResult.errors]) {
       console.warn(`[qtk] filter load failed: ${e.source}: ${e.error}`);
     }
 
-    // Hot-reload watcher — picks up new/edited/deleted filter files
-    // without a restart. Best-effort: a failed watcher just means no
-    // hot-reload; the loaded-at-startup set keeps working.
-    watchFilters(projectRoot, DEFAULT_FILTER_DIR, (result) => {
-      registry.replaceUserCompressors(result.filters.map((f) => f.compressor));
-      console.log(
-        `[qtk] hot-reload: ${result.filters.length} DSL filter(s) active`,
+    // Hot-reload watcher — picks up new/edited/deleted project filter files
+    // without a restart. Bundled filters are static for the session.
+    if (config.filters.project) {
+      watchFilters(
+        projectRoot,
+        DEFAULT_FILTER_DIR,
+        (result) => {
+          const projectFilters = result.filters.map((f) => f.compressor);
+          const bundledFilters = bundledResult.filters.map((f) => f.compressor);
+          registry.replaceUserCompressors([
+            ...projectFilters,
+            ...bundledFilters,
+          ]);
+          console.log(
+            `[qtk] hot-reload: ${result.filters.length} project DSL filter(s) active`,
+          );
+          for (const e of result.errors) {
+            console.warn(`[qtk] filter load failed: ${e.source}: ${e.error}`);
+          }
+        },
+        { namespace: "project" },
       );
-      for (const e of result.errors) {
-        console.warn(`[qtk] filter load failed: ${e.source}: ${e.error}`);
-      }
-    });
+    }
   } catch (e) {
     console.warn("[qtk] filter loader failed:", e);
   }

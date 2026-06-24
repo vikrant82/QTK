@@ -13,8 +13,8 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 
 - **Active TS** — registered in `DEFAULT_COMPRESSORS`.
 - **Active sidecar** — available when `qtk-core` is detected.
-- **Imported inactive** — present under `packages/qtk-filters/imported/`, but
-  not loaded automatically today.
+- **Bundled filter** — imported from RTK-compatible TOML and loaded from the
+  package by default, unless disabled in `[qtk.filters]`.
 - **Planned** — not implemented or not active yet.
 
 ## Current QTK coverage
@@ -27,21 +27,21 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 | GitHub/GitLab CLI | `gh pr/issue/run/repo/api`, `glab` | Planned | TS table/JSON summarizers or bundled filters | Medium |
 | JS package managers | `npm`, `pnpm`, `npx`, `bun`, `yarn` | Planned | TS compressors plus safe quiet pre-call rewrites | High |
 | JS/TS tests | `jest`, `vitest`, `playwright`, JUnit XML reports | `junit-xml` active sidecar; others planned | TS failure-only compressors; sidecar for XML reports | High |
-| Python | `pytest`, `ruff`, `pip`, `poetry`, `uv` | `pytest` active TS; several filters imported inactive | Bundled filters + targeted TS where high-volume | High |
+| Python | `pytest`, `ruff`, `pip`, `poetry`, `uv` | `pytest` active TS; several bundled filters active by default | Targeted TS where high-volume | High |
 | Rust | `cargo build/test/check/clippy/fmt`, JSON message format | `cargo` active TS; `cargo-json` active sidecar | Add flag-aware behavior and more subcommands | Medium |
 | Go | `go test`, `golangci-lint` | Planned | DSL/TS failure and lint grouping | Medium |
-| Build/lint | `tsc`, `eslint`, `biome`, `prettier`, `next build`, `make`, `mvn`, `gradle`, `swift`, `xcodebuild` | Several imported inactive; no active TS for JS/TS build/lint | Activate bundled filters first, then TS for `tsc`/`eslint` | High |
+| Build/lint | `tsc`, `eslint`, `biome`, `prettier`, `next build`, `make`, `mvn`, `gradle`, `swift`, `xcodebuild` | Several bundled filters active by default; no active TS for JS/TS build/lint | TS for `tsc`/`eslint` where needed | High |
 | Containers | `docker ps/images/logs/compose`, `kubectl`, `oc` | `kubectl -o yaml/json` active sidecar | DSL/TS for Docker; sidecar for heavy K8s structured output | Medium |
-| Infrastructure/cloud | `terraform`, `tofu`, `aws`, `gcloud`, `helm`, `ansible`, `pulumi`, `sops` | `terraform-plan` active sidecar; many imported inactive | Bundled filters + sidecar for heavy JSON/YAML | Medium |
-| Network/system | `curl`, `wget`, `ping`, `df`, `du`, `ps`, `systemctl`, `rsync` | Some imported inactive; no generic active fallback | Bundled filters + generic postprocessors | Medium |
+| Infrastructure/cloud | `terraform`, `tofu`, `aws`, `gcloud`, `helm`, `ansible`, `pulumi`, `sops` | `terraform-plan` active sidecar; many bundled filters active by default | Sidecar for heavy JSON/YAML | Medium |
+| Network/system | `curl`, `wget`, `ping`, `df`, `du`, `ps`, `systemctl`, `rsync` | Some bundled filters active by default; no generic active fallback | Generic postprocessors | Medium |
 | Generic wrappers | `rtk err`, `rtk test`, `rtk summary`, `rtk log`, `rtk json` | Planned | Generic postprocessors after normal registry misses | High |
 | Security/redaction | Secret-aware command shaping in RTK command families | Tee redaction only today | Global model-facing redaction pass | Critical |
 | Analytics/discovery | `rtk gain`, `discover`, session analytics | `qtk gain` exists for compression stats | Extend stats for source/family/result-shape, rewrites, redactions, misses | Medium |
 
 ## Implementation order
 
-1. **Packaged filter activation** — load imported RTK-compatible filters from
-   the package, with project filters taking precedence.
+1. **Packaged filter activation** — done: imported RTK-compatible filters load
+   from the package, with project filters taking precedence.
 2. **Everyday TS compressors** — package managers, JS test runners, `find`/`fd`,
    `git diff/show`, `gh`, `tsc`/`eslint`, Docker.
 3. **Generic postprocessors** — ANSI strip, log entropy normalization, repeated

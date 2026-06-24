@@ -88,7 +88,7 @@ Goal: let users add per-project compressors without writing TypeScript.
 - [x] `packages/qtk-plugin/src/dsl/parser.ts` — hand-written TOML parser
 - [x] `packages/qtk-plugin/src/dsl/spec.ts` — spec validator + regex compilation
 - [x] `packages/qtk-plugin/src/dsl/runtime.ts` — compileFilter(spec) → Compressor
-- [x] `packages/qtk-plugin/src/dsl/loader.ts` — scans `.opencode/qtk/filters/*.toml`
+- [x] `packages/qtk-plugin/src/dsl/loader.ts` — scans project filters and packaged imported filters
 - [x] `packages/qtk-plugin/src/dsl/watcher.ts` — hot-reload via fs.watch + 250 ms debounce
 - [x] Registry: `prepend()` + `replaceUserCompressors()` for DSL integration
 - [x] `scripts/import-rtk-filters.ts` — local-checkout import (no network code) with attribution
@@ -99,13 +99,15 @@ Goal: let users add per-project compressors without writing TypeScript.
 
 - ✅ A user can drop a new TOML file into `.opencode/qtk/filters/` and see the
   next matching tool call get compressed without restarting opencode
+- ✅ Packaged RTK-compatible filters load by default; project filters take
+  precedence and remain hot-reloaded
 - ✅ Invalid TOML files log a warning but don't break QTK
 - ✅ The DSL runtime achieves competitive performance — 98.2% reduction on
   `kubectl get pods` at p99 1.17 ms, same ballpark as hand-written TS
 - ✅ RTK filter import: 59 filters are imported under
   `packages/qtk-filters/imported/`
-- 🟡 Packaged imported filters are not loaded automatically yet; project-local
-  `.opencode/qtk/filters/*.toml` filters are active today
+- ✅ Packaged imported filters are copied into the plugin package at build time
+  and loaded automatically unless `[qtk.filters].bundled = false`
 
 ---
 
