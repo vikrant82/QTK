@@ -32,10 +32,19 @@ import {
   type AsyncCompressor,
 } from "./sidecar/compressors.ts";
 import { SavingsExporter } from "./savings-export.ts";
-import { extractResultText } from "./result-text.ts";
+import { extractResultText, type ResultTextTarget } from "./result-text.ts";
 import { classifyCompressorSource, isGenericCompressor } from "./metrics.ts";
 import { isTruthyEnv, rewriteCommand } from "./rewrite.ts";
-import type { CompressionOutcome } from "./types.ts";
+import { redactModelText } from "./redaction.ts";
+import {
+  createQtkLogger,
+  formatArrow,
+  formatBytes,
+  formatRatioSaved,
+  sanitizeLogLabel,
+  type QtkLogger,
+} from "./logger.ts";
+import type { CompressionOutcome, QtkConfig } from "./types.ts";
 
 export const QtkPlugin: Plugin = async ({ directory }) => {
   const projectRoot = directory ?? process.cwd();
@@ -45,6 +54,10 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   }
 
   const config = await loadConfig(projectRoot);
+  const logger = createQtkLogger({
+    logLevel: config.logLevel,
+    debugEnv: process.env.QTK_DEBUG,
+  });
 
   if (!config.enabled) {
     console.log("[qtk] disabled via .opencode/qtk.toml");
@@ -70,7 +83,10 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
       });
     }
 
-    const filters = [...projectResult.filters, ...bundledResult.filters];
+    const disabledFilters = new Set(config.filters.disabled);
+    const filters = [...projectResult.filters, ...bundledResult.filters].filter(
+      (f) => !disabledFilters.has(f.spec.name) && !disabledFilters.has(f.compressor.name),
+    );
     if (filters.length > 0) {
       registry.prepend(filters.map((f) => f.compressor));
       console.log(
@@ -90,8 +106,20 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
         projectRoot,
         DEFAULT_FILTER_DIR,
         (result) => {
-          const projectFilters = result.filters.map((f) => f.compressor);
-          const bundledFilters = bundledResult.filters.map((f) => f.compressor);
+          const projectFilters = result.filters
+            .filter(
+              (f) =>
+                !disabledFilters.has(f.spec.name) &&
+                !disabledFilters.has(f.compressor.name),
+            )
+            .map((f) => f.compressor);
+          const bundledFilters = bundledResult.filters
+            .filter(
+              (f) =>
+                !disabledFilters.has(f.spec.name) &&
+                !disabledFilters.has(f.compressor.name),
+            )
+            .map((f) => f.compressor);
           registry.replaceUserCompressors([
             ...projectFilters,
             ...bundledFilters,
@@ -109,6 +137,11 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   } catch (e) {
     console.warn("[qtk] filter loader failed:", e);
   }
+
+  registry.disable(disabledCompressorNames(config.compressors));
+  registry.disable(disabledToolCompressorNames(config.tools));
+  if (!config.filters.bundled) registry.removeByPrefix(["dsl:bundled:"]);
+  if (!config.filters.project) registry.removeByPrefix(["dsl:project:"]);
 
   let tee: TeeWriter | null = null;
   if (config.tee.enabled) {
@@ -141,24 +174,36 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   // ─── Sidecar (Phase 3) — optional Rust binary for heavy parsers ─────────
   let sidecarCompressors: AsyncCompressor[] = [];
   try {
-    const binPath = await locateQtkCore(projectRoot);
-    if (binPath) {
-      const client = new SidecarClient({ binaryPath: binPath });
-      // Lazy-start: don't block plugin init waiting for the binary.
-      // The first compress() call will await readiness.
-      client.start().then(
-        () => console.log(`[qtk] sidecar ready (${binPath})`),
-        (e) =>
-          console.warn(
-            `[qtk] sidecar startup failed (${binPath}): ${(e as Error).message}; using TS-only`,
-          ),
-      );
-      sidecarCompressors = buildSidecarCompressors({ client });
-      console.log(
-        `[qtk] sidecar enabled — ${sidecarCompressors.length} compressors via qtk-core`,
-      );
+    if (!config.sidecar.enabled) {
+      console.log("[qtk] sidecar disabled via .opencode/qtk.toml");
     } else {
-      console.log("[qtk] sidecar: qtk-core binary not found; using TS-only");
+      const binPath = await locateQtkCore(projectRoot);
+      if (binPath) {
+        const client = new SidecarClient({
+          binaryPath: binPath,
+          requestTimeoutMs: config.sidecar.requestTimeoutMs,
+          startupTimeoutMs: config.sidecar.startupTimeoutMs,
+          maxRestarts: config.sidecar.maxRestarts,
+        });
+        // Lazy-start: don't block plugin init waiting for the binary.
+        // The first compress() call will await readiness.
+        client.start().then(
+          () => console.log(`[qtk] sidecar ready (${binPath})`),
+          (e) =>
+            console.warn(
+              `[qtk] sidecar startup failed (${binPath}): ${(e as Error).message}; using TS-only`,
+            ),
+        );
+        sidecarCompressors = buildSidecarCompressors({
+          client,
+          minInputBytes: config.sidecar.minInputBytes,
+        }).filter((c) => !isNameDisabled(c.name, config.sidecar.disabled));
+        console.log(
+          `[qtk] sidecar enabled — ${sidecarCompressors.length} compressors via qtk-core`,
+        );
+      } else {
+        console.log("[qtk] sidecar: qtk-core binary not found; using TS-only");
+      }
     }
   } catch (e) {
     console.warn("[qtk] sidecar setup failed:", e);
@@ -179,7 +224,8 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
       try {
         if (
           isTruthyEnv(process.env.QTK_DISABLED) ||
-          isTruthyEnv(process.env.QTK_REWRITE_DISABLED)
+          isTruthyEnv(process.env.QTK_REWRITE_DISABLED) ||
+          !config.rewrite.enabled
         ) {
           return;
         }
@@ -189,8 +235,13 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
         }
         const rewritten = rewriteCommand(output.args.command);
         if (!rewritten) return;
-        output.args.command = rewritten.command;
-        console.log(`[qtk] rewrite ${rewritten.rule}: ${rewritten.command}`);
+        const rewrittenCommand = rewritten.command;
+        output.args.command = rewrittenCommand;
+        logger.debug("rewrite", {
+          tool: input.tool,
+          rule: rewritten.rule,
+          cmd: safeCommandLabel(rewrittenCommand),
+        });
       } catch (e) {
         console.warn("[qtk] tool.execute.before failed:", e);
       }
@@ -208,8 +259,11 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
           tee,
           stats,
           savingsExporter,
+          logger,
           dedupTtlMs: config.dedupTtlSeconds * 1000,
           teeMode: config.tee.mode,
+          redactionEnabled: config.redaction.enabled,
+          config,
         });
       } catch (e) {
         console.warn("[qtk] hook failed (output unchanged):", e);
@@ -230,8 +284,11 @@ interface ProcessContext {
     SavingsExporter,
     "record" | "setModelId" | "setSessionId"
   >;
+  logger: QtkLogger;
   dedupTtlMs: number;
   teeMode: "always" | "failures_and_compressed" | "never";
+  redactionEnabled: boolean;
+  config: QtkConfig;
 }
 
 interface HookInput {
@@ -254,9 +311,31 @@ async function processCall(
   ctx: ProcessContext,
 ): Promise<void> {
   const target = extractResultText(output);
-  if (!target || !target.text) return;
+  if (!target) {
+    ctx.logger.debug("passthrough", {
+      tool: input.tool,
+      reason: "no_text",
+    });
+    return;
+  }
+  if (!target.text) {
+    ctx.logger.debug("passthrough", {
+      tool: input.tool,
+      shape: target.shape,
+      reason: "empty_text",
+    });
+    return;
+  }
   const raw = target.text;
-  if (raw.length < 200) return; // small outputs not worth compressing
+  if (raw.length < ctx.config.compression.minInputBytes) {
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, {}, target.shape, raw, redacted);
+    } else {
+      logPassThrough(ctx.logger, input, {}, target.shape, raw, "too_small");
+    }
+    return; // small outputs are not worth compressing, but may need redaction
+  }
 
   const args = extractHookArgs(input, output);
 
@@ -282,7 +361,11 @@ async function processCall(
         : "") +
       `>`;
     const cachedOutput = `${cachedOpen}\n${cacheHit.compressed}\n</qtk-unchanged>`;
-    target.write(cachedOutput);
+    const modelCachedOutput = writeModelText(
+      target,
+      cachedOutput,
+      ctx.redactionEnabled,
+    );
     const cacheOutcome: CompressionOutcome = {
       compressor: "session-cache",
       compressorSource: "session-cache",
@@ -290,10 +373,10 @@ async function processCall(
       isLossy: cacheHit.lossy ?? false,
       isGeneric: false,
       originalBytes: raw.length,
-      compressedBytes: cachedOutput.length,
+      compressedBytes: modelCachedOutput.text.length,
       originalTokensEst: estimateTokens(raw),
-      compressedTokensEst: estimateTokens(cachedOutput),
-      ratio: cachedOutput.length / raw.length,
+      compressedTokensEst: estimateTokens(modelCachedOutput.text),
+      ratio: modelCachedOutput.text.length / raw.length,
       durationMs: 0,
       wasCacheHit: true,
       teeFile: cacheHit.teeFile ?? null,
@@ -310,6 +393,17 @@ async function processCall(
       tool: input.tool,
       compressorSource: cacheOutcome.compressorSource,
       resultShape: cacheOutcome.resultShape,
+    });
+    ctx.logger.debug("cache-hit", {
+      ...logFields(input, args),
+      shape: target.shape,
+      bytes: formatArrow(formatBytes(raw.length), formatBytes(modelCachedOutput.text.length)),
+      saved: formatRatioSaved(raw.length, modelCachedOutput.text.length),
+      tok: formatArrow(estimateTokens(raw), estimateTokens(modelCachedOutput.text)),
+      since: `${elapsed}s`,
+      lossy: cacheHit.lossy ? true : undefined,
+      tee: cacheHit.teeFile ? pathToRelative(cacheHit.teeFile, ctx.projectRoot) : undefined,
+      redactions: modelCachedOutput.redactionCount || undefined,
     });
     return;
   }
@@ -352,10 +446,36 @@ async function processCall(
     if (!compressor) {
       // No compressor matched. Still cache (raw stays as-is) so we catch
       // identical repeats next time.
-      ctx.cache.put(fp, outHash, raw);
+      const redactedRaw = maybeRedactModelText(raw, ctx.redactionEnabled);
+      ctx.cache.put(fp, outHash, redactedRaw.text);
+      if (redactedRaw.count > 0) {
+        target.write(redactedRaw.text);
+        logRedacted(ctx.logger, input, args, target.shape, raw, redactedRaw, {
+          reason: "no_match",
+        });
+      } else {
+        logPassThrough(ctx.logger, input, args, target.shape, raw, "no_match");
+      }
       return;
     }
     if (ctx.breaker.isDisabled(compressor.name)) {
+      const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+      if (redacted) {
+        logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+          reason: "compressor_disabled",
+          compressor: compressor.name,
+        });
+      } else {
+        logPassThrough(
+          ctx.logger,
+          input,
+          args,
+          target.shape,
+          raw,
+          "compressor_disabled",
+          { compressor: compressor.name },
+        );
+      }
       return; // circuit-broken: pass through
     }
 
@@ -365,7 +485,7 @@ async function processCall(
       candidate = compressor.compress(raw, {
         args,
         cwd: ctx.projectRoot,
-        config: {},
+        config: configForCompressor(ctx.config, compressor.name),
       });
     } catch (e) {
       const newlyDisabled = ctx.breaker.recordFailure(compressor.name);
@@ -374,7 +494,18 @@ async function processCall(
           `[qtk] disabling compressor '${compressor.name}' after 3 failures`,
         );
       }
-      return; // output unchanged
+      const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+      if (redacted) {
+        logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+          reason: "compressor_error",
+          compressor: compressor.name,
+        });
+      } else {
+        logPassThrough(ctx.logger, input, args, target.shape, raw, "compressor_error", {
+          compressor: compressor.name,
+        });
+      }
+      return; // output unchanged except possible redaction
     }
     durationMs = Math.round(performance.now() - t0);
     compressed = candidate;
@@ -386,12 +517,37 @@ async function processCall(
     console.warn(
       `[qtk] compressor '${compressorName}' produced larger output, ignoring`,
     );
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+        reason: "larger_output",
+        compressor: compressorName,
+      });
+    } else {
+      logPassThrough(ctx.logger, input, args, target.shape, raw, "larger_output", {
+        compressor: compressorName,
+        candidateBytes: compressed.length,
+      });
+    }
     return;
   }
   // No actual compression
-  if (compressed === raw) return;
+  if (compressed === raw) {
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+        reason: "unchanged",
+        compressor: compressorName,
+      });
+    } else {
+      logPassThrough(ctx.logger, input, args, target.shape, raw, "unchanged", {
+        compressor: compressorName,
+      });
+    }
+    return;
+  }
 
-  const ratio = compressed.length / raw.length;
+  const bodyRatio = compressed.length / raw.length;
   const isLossyGeneric = isGenericCompressor(compressorName);
 
   // Decide whether to tee
@@ -399,27 +555,50 @@ async function processCall(
   const shouldTee =
     isLossyGeneric ||
     (ctx.tee && ctx.teeMode === "always") ||
-    (ctx.teeMode === "failures_and_compressed" && ratio < 0.7);
+    (ctx.teeMode === "failures_and_compressed" && bodyRatio < 0.7);
   if (shouldTee && ctx.tee) {
     teeFile = await ctx.tee.write(input.callID, raw);
   }
   // Generic fallbacks are intentionally lossy summaries. Require a recoverable
   // raw tee so the agent can inspect exact content if needed.
-  if (isLossyGeneric && !teeFile) return;
+  if (isLossyGeneric && !teeFile) {
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+        reason: "generic_requires_tee",
+        compressor: compressorName,
+      });
+    } else {
+      logPassThrough(
+        ctx.logger,
+        input,
+        args,
+        target.shape,
+        raw,
+        "generic_requires_tee",
+        { compressor: compressorName },
+      );
+    }
+    return;
+  }
 
   // Wrap compressed output in an envelope so the model can find the tee if needed
   const origLines = raw.split("\n").length;
   const envelopeOpen =
-    `<qtk-compressed compressor=${compressorName} orig_lines=${origLines} ratio=${ratio.toFixed(2)}` +
+    `<qtk-compressed compressor=${compressorName} orig_lines=${origLines} ratio=${bodyRatio.toFixed(2)}` +
     (isLossyGeneric ? ` lossy=true` : "") +
     (teeFile ? ` tee=${pathToRelative(teeFile, ctx.projectRoot)}` : "") +
     `>`;
 
   const compressedOutput = `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
-  target.write(compressedOutput);
+  const modelCompressedOutput = writeModelText(
+    target,
+    compressedOutput,
+    ctx.redactionEnabled,
+  );
 
   // Cache the (raw) hash + the compressed body, so repeats short-circuit
-  ctx.cache.put(fp, outHash, compressed, {
+  ctx.cache.put(fp, outHash, maybeRedactModelText(compressed, ctx.redactionEnabled).text, {
     lossy: isLossyGeneric,
     teeFile,
   });
@@ -432,10 +611,10 @@ async function processCall(
     isLossy: isLossyGeneric,
     isGeneric: isGenericCompressor(compressorName),
     originalBytes: raw.length,
-    compressedBytes: compressedOutput.length,
+    compressedBytes: modelCompressedOutput.text.length,
     originalTokensEst: estimateTokens(raw),
-    compressedTokensEst: estimateTokens(compressedOutput),
-    ratio,
+    compressedTokensEst: estimateTokens(modelCompressedOutput.text),
+    ratio: modelCompressedOutput.text.length / raw.length,
     durationMs,
     wasCacheHit: false,
     teeFile,
@@ -453,6 +632,146 @@ async function processCall(
     compressorSource: outcome.compressorSource,
     resultShape: outcome.resultShape,
   });
+  ctx.logger.debug("compressed", {
+    ...logFields(input, args),
+    shape: target.shape,
+    compressor: compressorName,
+    bytes: formatArrow(formatBytes(raw.length), formatBytes(modelCompressedOutput.text.length)),
+    saved: formatRatioSaved(raw.length, modelCompressedOutput.text.length),
+    tok: formatArrow(estimateTokens(raw), estimateTokens(modelCompressedOutput.text)),
+    dt: `${durationMs}ms`,
+    lossy: isLossyGeneric ? true : undefined,
+    tee: teeFile ? pathToRelative(teeFile, ctx.projectRoot) : undefined,
+    redactions: modelCompressedOutput.redactionCount || undefined,
+  });
+}
+
+interface ModelWriteResult {
+  readonly text: string;
+  readonly redactionCount: number;
+}
+
+function writeModelText(
+  target: ResultTextTarget,
+  text: string,
+  redactionEnabled: boolean,
+): ModelWriteResult {
+  const redacted = maybeRedactModelText(text, redactionEnabled);
+  target.write(redacted.text);
+  return { text: redacted.text, redactionCount: redacted.count };
+}
+
+function writePassThroughIfRedacted(
+  target: ResultTextTarget,
+  text: string,
+  redactionEnabled: boolean,
+): ModelWriteResult | null {
+  const redacted = maybeRedactModelText(text, redactionEnabled);
+  if (redacted.count === 0) return null;
+  target.write(redacted.text);
+  return { text: redacted.text, redactionCount: redacted.count };
+}
+
+function maybeRedactModelText(
+  text: string,
+  redactionEnabled: boolean,
+): ReturnType<typeof redactModelText> {
+  if (!redactionEnabled) return { text, count: 0 };
+  return redactModelText(text);
+}
+
+function disabledCompressorNames(
+  config: Record<string, Record<string, unknown>>,
+): readonly string[] {
+  return Object.entries(config)
+    .filter(([, value]) => value.enabled === false)
+    .map(([name]) => name.replace(/_/g, "-"));
+}
+
+function disabledToolCompressorNames(
+  config: Record<string, Record<string, unknown>>,
+): readonly string[] {
+  return Object.entries(config)
+    .filter(([, value]) => value.enabled === false)
+    .map(([name]) => `tool-${name.replace(/_/g, "-")}`);
+}
+
+function configForCompressor(
+  config: QtkConfig,
+  compressorName: string,
+): Record<string, unknown> {
+  if (compressorName.startsWith("tool-")) {
+    return {
+      ...lookupOptionTable(config.tools, compressorName.slice("tool-".length)),
+      ...lookupOptionTable(config.compressors, compressorName),
+    };
+  }
+  return lookupOptionTable(config.compressors, compressorName);
+}
+
+function lookupOptionTable(
+  tables: Record<string, Record<string, unknown>>,
+  name: string,
+): Record<string, unknown> {
+  return tables[name] ?? tables[name.replace(/-/g, "_")] ?? {};
+}
+
+function isNameDisabled(name: string, disabled: readonly string[]): boolean {
+  return disabled.some((entry) => entry === name || name.endsWith(`:${entry}`));
+}
+
+function logRedacted(
+  logger: QtkLogger,
+  input: HookInput,
+  args: Record<string, unknown>,
+  shape: string,
+  raw: string,
+  redacted: ModelWriteResult | { readonly text: string; readonly count: number },
+  extra: Record<string, string | number | boolean | null | undefined> = {},
+): void {
+  const count = "redactionCount" in redacted ? redacted.redactionCount : redacted.count;
+  logger.debug("redacted", {
+    ...logFields(input, args),
+    shape,
+    bytes: formatArrow(formatBytes(raw.length), formatBytes(redacted.text.length)),
+    redactions: count,
+    ...extra,
+  });
+}
+
+function logPassThrough(
+  logger: QtkLogger,
+  input: HookInput,
+  args: Record<string, unknown>,
+  shape: string,
+  raw: string,
+  reason: string,
+  extra: Record<string, string | number | boolean | null | undefined> = {},
+): void {
+  logger.debug("passthrough", {
+    ...logFields(input, args),
+    shape,
+    reason,
+    bytes: formatBytes(raw.length),
+    tok: estimateTokens(raw),
+    ...extra,
+  });
+}
+
+function logFields(
+  input: HookInput,
+  args: Record<string, unknown>,
+): Record<string, string> {
+  return {
+    tool: input.tool,
+    ...(input.tool.toLowerCase() === "bash" && typeof args.command === "string"
+      ? { cmd: safeCommandLabel(args.command) }
+      : {}),
+  };
+}
+
+function safeCommandLabel(command: string): string {
+  return sanitizeLogLabel(commandHead(command));
 }
 
 function extractCommandHead(

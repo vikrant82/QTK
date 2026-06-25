@@ -1,0 +1,233 @@
+# Complete QTK runtime config sample.
+# Project config: <opencode project>/.opencode/qtk.toml
+# Global config:  ~/.config/qtk/qtk.toml  (or $XDG_CONFIG_HOME/qtk/qtk.toml)
+# Project config is merged over global config.
+
+[qtk]
+enabled = true
+log_level = "info"          # debug | info | warn | error
+dedup_ttl_seconds = 60      # session cache TTL for identical outputs
+
+[qtk.compression]
+min_input_bytes = 200       # below this, only redaction/cache pass-through runs
+
+[qtk.rewrite]
+enabled = true              # safe Bash quiet rewrites before execution
+
+[qtk.redaction]
+enabled = true              # model-facing redaction; tee files still redact on write
+
+[qtk.sidecar]
+enabled = true              # optional qtk-core Rust parsers if binary is installed
+request_timeout_ms = 1000
+startup_timeout_ms = 1500
+max_restarts = 3
+min_input_bytes = 200
+disabled = [
+  # "sidecar:terraform-plan",
+  # "sidecar:kubectl-structured",
+  # "sidecar:cargo-json",
+  # "sidecar:junit-xml",
+
+  # Short names are also accepted:
+  # "terraform-plan",
+  # "kubectl-structured",
+  # "cargo-json",
+  # "junit-xml",
+]
+
+[qtk.tee]
+enabled = true
+directory = ".opencode/qtk-tee"       # relative to project root; must stay inside it
+mode = "failures_and_compressed"      # always | failures_and_compressed | never
+prune_days = 7
+
+[qtk.stats]
+enabled = true
+database = ".opencode/qtk-stats.sqlite"
+
+[qtk.filters]
+bundled = true              # load packaged RTK-compatible filters
+project = true              # load .opencode/qtk/filters/*.toml
+disabled = [
+  # Disable specific loaded filter names if they are too aggressive.
+  # Project filters accept "project:<name>" or "dsl:project:<name>":
+  # "project:noisy-local-filter",
+
+  # Bundled filters accept "bundled:<name>" or "dsl:bundled:<name>".
+  # All bundled filter names are listed here as commented examples:
+  # "dsl:bundled:ansible-playbook",
+  # "dsl:bundled:basedpyright",
+  # "dsl:bundled:biome",
+  # "dsl:bundled:brew-install",
+  # "dsl:bundled:bundle-install",
+  # "dsl:bundled:composer-install",
+  # "dsl:bundled:df",
+  # "dsl:bundled:dotnet-build",
+  # "dsl:bundled:du",
+  # "dsl:bundled:fail2ban-client",
+  # "dsl:bundled:gcc",
+  # "dsl:bundled:gcloud",
+  # "dsl:bundled:gradle",
+  # "dsl:bundled:hadolint",
+  # "dsl:bundled:helm",
+  # "dsl:bundled:iptables",
+  # "dsl:bundled:jira",
+  # "dsl:bundled:jj",
+  # "dsl:bundled:jq",
+  # "dsl:bundled:just",
+  # "dsl:bundled:liquibase",
+  # "dsl:bundled:make",
+  # "dsl:bundled:markdownlint",
+  # "dsl:bundled:mise",
+  # "dsl:bundled:mix-compile",
+  # "dsl:bundled:mix-format",
+  # "dsl:bundled:mvn-build",
+  # "dsl:bundled:nx",
+  # "dsl:bundled:ollama",
+  # "dsl:bundled:oxlint",
+  # "dsl:bundled:ping",
+  # "dsl:bundled:pio-run",
+  # "dsl:bundled:poetry-install",
+  # "dsl:bundled:pre-commit",
+  # "dsl:bundled:ps",
+  # "dsl:bundled:quarto-render",
+  # "dsl:bundled:rsync",
+  # "dsl:bundled:shellcheck",
+  # "dsl:bundled:shopify-theme",
+  # "dsl:bundled:skopeo",
+  # "dsl:bundled:sops",
+  # "dsl:bundled:spring-boot",
+  # "dsl:bundled:ssh",
+  # "dsl:bundled:stat",
+  # "dsl:bundled:swift-build",
+  # "dsl:bundled:systemctl-status",
+  # "dsl:bundled:task",
+  # "dsl:bundled:terraform-plan",
+  # "dsl:bundled:tofu-fmt",
+  # "dsl:bundled:tofu-init",
+  # "dsl:bundled:tofu-plan",
+  # "dsl:bundled:tofu-validate",
+  # "dsl:bundled:trunk-build",
+  # "dsl:bundled:turbo",
+  # "dsl:bundled:ty",
+  # "dsl:bundled:uv-sync",
+  # "dsl:bundled:xcodebuild",
+  # "dsl:bundled:yadm",
+  # "dsl:bundled:yamllint",
+]
+
+# Per built-in compressor knobs. Set enabled=false to disable any compressor.
+# Table names may use underscores; they map to hyphenated compressor names.
+
+[qtk.compressors.git_status]
+enabled = true
+min_input_bytes = 80
+max_files_per_section = 15
+
+[qtk.compressors.git_log]
+enabled = true
+min_input_bytes = 100
+max_commits = 30
+
+[qtk.compressors.ls]
+enabled = true
+min_input_bytes = 80
+max_entries = 40                  # long-format ls cap
+short_threshold_entries = 30      # short-format ls below this passes through
+max_groups = 10
+max_names_per_group = 5
+
+[qtk.compressors.find]
+enabled = true
+min_input_bytes = 200
+max_input_bytes = 500000
+min_paths = 20
+max_groups = 20
+max_names_per_group = 8
+
+[qtk.compressors.rg]
+enabled = true
+min_input_bytes = 200
+max_files_shown = 15
+max_matches_per_file = 3
+max_line_chars = 100
+
+[qtk.compressors.package_manager]
+enabled = true
+min_input_bytes = 200
+max_input_bytes = 500000
+max_kept_lines = 80
+max_deprecations = 8
+min_dependencies = 20
+max_dependencies = 40
+
+[qtk.compressors.pytest]
+enabled = true
+min_input_bytes = 200
+trace_head_lines = 8
+max_failure_blocks = 20
+
+[qtk.compressors.cargo]
+enabled = true
+min_input_bytes = 200
+max_error_blocks = 5
+max_error_block_lines = 8
+max_test_failures = 20
+
+[qtk.compressors.generic_text]
+enabled = true                    # lossy MCP/task fallback; disable if too aggressive
+min_input_bytes = 500
+max_input_bytes = 500000
+disabled_shapes = [               # disable generic-text sub-shapes if too aggressive
+  # "json",
+  # "diagnostics",
+  # "path_list",
+  # "markdown",
+  # "repeated_lines",
+]
+max_groups = 20
+max_items_per_group = 8
+json_max_depth = 2
+json_max_keys = 12
+json_max_items = 8
+diagnostics_min_count = 8
+diagnostics_min_ratio = 0.35
+diagnostics_per_file = 3
+path_min_count = 20
+path_min_ratio = 0.75
+markdown_min_lines = 80
+markdown_max_headings = 30
+markdown_max_bullets = 20
+markdown_max_lead_lines = 8
+repeated_min_lines = 30
+repeated_min_count = 3
+repeated_min_ratio = 0.5
+repeated_max_groups = 20
+repeated_max_notable = 20
+
+# Built-in opencode tool compressors map to tool-* internally.
+
+[qtk.tools.read]
+enabled = true
+min_input_bytes = 4000
+outline_threshold_lines = 200
+max_outline_lines = 100
+head_lines = 40
+tail_lines = 20
+
+[qtk.tools.grep]
+enabled = true
+min_input_bytes = 500
+min_matches = 10
+max_files_shown = 15
+max_matches_per_file = 3
+max_line_chars = 100
+
+[qtk.tools.glob]
+enabled = true
+cluster_threshold = 30
+max_cluster_ratio = 0.7
+max_clusters = 15
+sample_paths_per_cluster = 2
+max_extensions_shown = 3

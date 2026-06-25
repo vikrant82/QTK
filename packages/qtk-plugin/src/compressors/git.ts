@@ -28,6 +28,7 @@
 //   untracked: new-file.ts, another-untracked/
 
 import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 const SECTION_RE = /^(.+?)\s+commit:?\s*$/;
 
@@ -45,8 +46,11 @@ export const gitStatusCompressor: Compressor = {
     );
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 80) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 80, {
+      min: 0,
+    });
+    if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
     let branch: string | null = null;
@@ -129,11 +133,16 @@ export const gitStatusCompressor: Compressor = {
       return raw;
     }
 
-    const MAX_FILES_PER_SECTION = 15;
+    const maxFilesPerSection = intOption(
+      ctx.config,
+      "max_files_per_section",
+      15,
+      { min: 1, max: 500 },
+    );
     const formatSection = (items: string[]): string => {
-      if (items.length <= MAX_FILES_PER_SECTION) return items.join(", ");
-      const head = items.slice(0, MAX_FILES_PER_SECTION).join(", ");
-      return `${head}, ... +${items.length - MAX_FILES_PER_SECTION} more`;
+      if (items.length <= maxFilesPerSection) return items.join(", ");
+      const head = items.slice(0, maxFilesPerSection).join(", ");
+      return `${head}, ... +${items.length - maxFilesPerSection} more`;
     };
 
     const parts: string[] = [];
@@ -181,8 +190,15 @@ export const gitLogCompressor: Compressor = {
     return true;
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 100) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 100, {
+      min: 0,
+    });
+    const maxCommits = intOption(ctx.config, "max_commits", 30, {
+      min: 1,
+      max: 500,
+    });
+    if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
     const commits: {
@@ -261,9 +277,13 @@ export const gitLogCompressor: Compressor = {
 
     if (commits.length === 0) return raw;
 
-    const out = commits
-      .map((c) => `${c.hash} ${c.date} ${c.author}: ${c.subject}`)
-      .join("\n");
+    const outLines = commits
+      .slice(0, maxCommits)
+      .map((c) => `${c.hash} ${c.date} ${c.author}: ${c.subject}`);
+    if (commits.length > maxCommits) {
+      outLines.push(`... +${commits.length - maxCommits} more commits`);
+    }
+    const out = outLines.join("\n");
     if (out.length >= raw.length) return raw;
     return out;
   },

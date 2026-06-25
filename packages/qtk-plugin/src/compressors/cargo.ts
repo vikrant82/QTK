@@ -10,7 +10,8 @@
 // Strategy: strip Compiling lines, keep Finished/Running summaries, keep
 // errors/warnings, keep test failures.
 
-import type { Compressor } from "../types.ts";
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 const COMPILING_RE = /^\s*Compiling\s+\S+\s+v[\d.]+/;
 const DOWNLOADING_RE = /^\s*(Downloading|Downloaded|Updating|Locking|Fresh)\s+/;
@@ -27,8 +28,23 @@ export const cargoTestCompressor: Compressor = {
     return /^cargo\s+(test|build|check|clippy|run)\b/.test(cmd);
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 200) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 200, {
+      min: 0,
+    });
+    const maxErrorBlocks = intOption(ctx.config, "max_error_blocks", 5, {
+      min: 1,
+      max: 100,
+    });
+    const maxErrorBlockLines = intOption(ctx.config, "max_error_block_lines", 8, {
+      min: 1,
+      max: 100,
+    });
+    const maxTestFailures = intOption(ctx.config, "max_test_failures", 20, {
+      min: 1,
+      max: 500,
+    });
+    if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
     const out: string[] = [];
@@ -68,7 +84,9 @@ export const cargoTestCompressor: Compressor = {
           inErrorBlock = false;
         } else {
           // Limit block length
-          if (currentErrorBlock.length < 8) currentErrorBlock.push(line);
+          if (currentErrorBlock.length < maxErrorBlockLines) {
+            currentErrorBlock.push(line);
+          }
         }
         continue;
       }
@@ -126,16 +144,16 @@ export const cargoTestCompressor: Compressor = {
     if (header.length > 0) sections.push(header.join(" "));
     if (errorBlocks.length > 0) {
       sections.push(`\n${errorBlocks.length} error(s):`);
-      sections.push(errorBlocks.slice(0, 5).join("\n\n"));
-      if (errorBlocks.length > 5) {
-        sections.push(`... +${errorBlocks.length - 5} more errors`);
+      sections.push(errorBlocks.slice(0, maxErrorBlocks).join("\n\n"));
+      if (errorBlocks.length > maxErrorBlocks) {
+        sections.push(`... +${errorBlocks.length - maxErrorBlocks} more errors`);
       }
     }
     if (testFailures.length > 0) {
       sections.push(`\n${testFailures.length} test failure(s):`);
-      sections.push(testFailures.slice(0, 20).join("\n"));
-      if (testFailures.length > 20) {
-        sections.push(`... +${testFailures.length - 20} more`);
+      sections.push(testFailures.slice(0, maxTestFailures).join("\n"));
+      if (testFailures.length > maxTestFailures) {
+        sections.push(`... +${testFailures.length - maxTestFailures} more`);
       }
     }
     if (out.length > 0) {

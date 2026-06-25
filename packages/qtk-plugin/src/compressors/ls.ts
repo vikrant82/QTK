@@ -11,7 +11,8 @@
 //
 // If we can't parse confidently, return raw.
 
-import type { Compressor } from "../types.ts";
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 export const lsCompressor: Compressor = {
   name: "ls",
@@ -24,8 +25,11 @@ export const lsCompressor: Compressor = {
     return /^ls(\s|$)/.test(cmd) && !/[|&;><]/.test(cmd);
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 80) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 80, {
+      min: 0,
+    });
+    if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n").filter((l) => l.length > 0);
     if (lines.length === 0) return raw;
@@ -36,13 +40,17 @@ export const lsCompressor: Compressor = {
       /^total\s+\d+/.test(lines[0]!);
 
     if (isLongFormat) {
-      return compressLongFormat(raw, lines);
+      return compressLongFormat(raw, lines, ctx.config);
     }
-    return compressShortFormat(raw, lines);
+    return compressShortFormat(raw, lines, ctx.config);
   },
 };
 
-function compressLongFormat(raw: string, lines: string[]): string {
+function compressLongFormat(
+  raw: string,
+  lines: string[],
+  config: Record<string, unknown>,
+): string {
   type Entry = {
     kind: "d" | "l" | "f";
     name: string;
@@ -92,10 +100,13 @@ function compressLongFormat(raw: string, lines: string[]): string {
   }
 
   // Truncate if very long
-  const MAX = 40;
-  if (out.length > MAX + 1) {
-    const head = out.slice(0, MAX);
-    const dropped = out.length - MAX;
+  const maxEntries = intOption(config, "max_entries", 40, {
+    min: 1,
+    max: 1000,
+  });
+  if (out.length > maxEntries + 1) {
+    const head = out.slice(0, maxEntries);
+    const dropped = out.length - maxEntries;
     head.push(`... ${dropped} more entries`);
     return head.join("\n");
   }
@@ -105,7 +116,11 @@ function compressLongFormat(raw: string, lines: string[]): string {
   return result;
 }
 
-function compressShortFormat(raw: string, lines: string[]): string {
+function compressShortFormat(
+  raw: string,
+  lines: string[],
+  config: Record<string, unknown>,
+): string {
   // Plain `ls` output — already pretty compact. Just collapse multi-column
   // and group by extension if > 30 entries.
   const tokens: string[] = [];
@@ -114,7 +129,11 @@ function compressShortFormat(raw: string, lines: string[]): string {
       if (tok) tokens.push(tok);
     }
   }
-  if (tokens.length < 30) return raw; // already short
+  const shortThreshold = intOption(config, "short_threshold_entries", 30, {
+    min: 1,
+    max: 1000,
+  });
+  if (tokens.length < shortThreshold) return raw; // already short
 
   const byExt = new Map<string, string[]>();
   for (const t of tokens) {
@@ -126,13 +145,24 @@ function compressShortFormat(raw: string, lines: string[]): string {
   }
   const groups = [...byExt.entries()].sort((a, b) => b[1].length - a[1].length);
   const out: string[] = [`${tokens.length} entries:`];
-  for (const [ext, names] of groups.slice(0, 10)) {
-    const show = names.slice(0, 5).join(", ");
-    const more = names.length > 5 ? `, ... +${names.length - 5}` : "";
+  const maxGroups = intOption(config, "max_groups", 10, {
+    min: 1,
+    max: 100,
+  });
+  const maxNamesPerGroup = intOption(config, "max_names_per_group", 5, {
+    min: 1,
+    max: 100,
+  });
+  for (const [ext, names] of groups.slice(0, maxGroups)) {
+    const show = names.slice(0, maxNamesPerGroup).join(", ");
+    const more =
+      names.length > maxNamesPerGroup
+        ? `, ... +${names.length - maxNamesPerGroup}`
+        : "";
     out.push(`  ${ext} (${names.length}): ${show}${more}`);
   }
-  if (groups.length > 10) {
-    out.push(`  ... and ${groups.length - 10} more extensions`);
+  if (groups.length > maxGroups) {
+    out.push(`  ... and ${groups.length - maxGroups} more extensions`);
   }
 
   const result = out.join("\n");
