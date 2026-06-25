@@ -164,33 +164,91 @@ Or via the CLI:
 bun "$QTK/packages/qtk-plugin/src/cli/gain.ts"
 ```
 
+For live per-call diagnostics, enable debug logging with either config or env:
+
+```toml
+[qtk]
+log_level = "debug"
+```
+
+or:
+
+```bash
+QTK_DEBUG=1 opencode
+```
+
+Debug lines are written to the opencode/plugin process log, never to model
+tool output. They contain sizes, token estimates, compressor names, pass-through
+reasons, and redaction counts, but not raw tool output:
+
+```text
+[qtk] compressed tool=bash cmd="git status" shape=output compressor=git-status bytes=2.2kB→733B saved=67.3% tok=561→184 dt=1ms
+[qtk] passthrough tool=serena_find_symbol shape=mcp_text_content reason=no_match bytes=18.4kB tok=4700
+[qtk] redacted tool=read shape=output bytes=480B→421B redactions=2
+```
+
 ---
 
 ## Configuration
 
-Drop a `.opencode/qtk.toml` in your opencode project root to override
-defaults:
+QTK loads a global config first, then merges project config over it:
+
+- Global: `~/.config/qtk/qtk.toml` or `$XDG_CONFIG_HOME/qtk/qtk.toml`
+- Project: `<opencode project>/.opencode/qtk.toml`
+
+See `docs/examples/qtk.toml` for a complete copy-pasteable sample of every
+currently honored runtime knob.
 
 ```toml
 [qtk]
 enabled = true
-log_level = "info"
+log_level = "info" # set to "debug" for per-call compression diagnostics
 dedup_ttl_seconds = 60
+
+[qtk.compression]
+min_input_bytes = 200
+
+[qtk.rewrite]
+enabled = true # set false to disable Bash quiet rewrites
+
+[qtk.redaction]
+enabled = true # model-facing redaction; tee files still redact on write
+
+[qtk.sidecar]
+enabled = true # set false to skip qtk-core lookup/use
+request_timeout_ms = 1000
+disabled = [] # e.g. ["sidecar:junit-xml"]
 
 [qtk.tee]
 enabled = true
 mode = "failures_and_compressed"
 prune_days = 7
 
+[qtk.filters]
+bundled = true
+project = true
+disabled = [] # e.g. ["project:noisy", "dsl:bundled:helm"]
+
 [qtk.compressors.git_status]
-max_files_shown = 30
+enabled = true # set false to disable this built-in compressor
+max_files_per_section = 15
+
+[qtk.compressors.generic_text]
+enabled = true # lossy MCP/task fallback; disable if too aggressive
+disabled_shapes = [] # json | diagnostics | path_list | markdown | repeated_lines
 
 [qtk.tools.read]
-outline_threshold_lines = 250
+enabled = true # maps to internal compressor name tool-read
+outline_threshold_lines = 200
 ```
 
-See `docs/FILTER-DSL.md` for adding custom per-project compressors as TOML
-filters in `.opencode/qtk/filters/`.
+The config loader currently supports booleans, numbers, strings, arrays, and
+section tables. Project config overrides global config; per-compressor/per-tool
+tables are deep-merged by table name.
+
+For adding custom per-project compressors as TOML filters in
+`.opencode/qtk/filters/`, see `docs/FILTER-DSL.md` and
+`docs/examples/filter.toml`.
 
 ---
 

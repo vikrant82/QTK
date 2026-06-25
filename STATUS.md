@@ -296,7 +296,8 @@ entire DSL system, well under our internal budget.
 - ✅ Type system (`types.ts` — Compressor interface + outcome shapes)
 - ✅ Config loader (`config.ts` — reads `.opencode/qtk.toml`, validates paths against project root, refuses env-var overrides)
 - ✅ Session dedup cache (`cache.ts` — SHA-256 fingerprint, output-hash equality check, LRU eviction at 500 entries)
-- ✅ Tee fallback writer (`tee.ts` — explicit 0o600 file mode, 0o700 directory, path-confined, secrets-aware redaction for AWS/GitHub/OpenAI/Slack/Bearer tokens, prune-on-startup)
+- ✅ Tee fallback writer (`tee.ts` — explicit 0o600 file mode, 0o700 directory, path-confined, shares the global secret redactor, prune-on-startup)
+- ✅ Global model-facing secret redaction (`redaction.ts` — compressed, pass-through, and MCP text output redacted before mutation)
 - ✅ SQLite stats tracker (`stats.ts` — WAL mode, automatic schema migration, fire-and-forget logging)
 - ✅ Token estimator (`estimator.ts` — chars/4, matches opencode's heuristic)
 - ✅ Circuit breaker (`circuit-breaker.ts` — disables compressor after 3 failures/session)
@@ -382,7 +383,7 @@ Ran 160 tests across 10 files.
 | Glob tool             | 3     | match, clustering, small-list passthrough             |
 | Session cache         | 3     | fingerprint stability, output-hash check, LRU pruning |
 | Circuit breaker       | 2     | 3-strike disable, per-compressor isolation            |
-| Tee redaction         | 4     | AWS, GitHub, Bearer, benign-pass-through              |
+| Secret redaction      | 13    | Model-facing + tee, pass-through/compressed/MCP paths, false-positive guards |
 
 ## What's NOT done yet
 

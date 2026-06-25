@@ -47,10 +47,20 @@ compression: 60-99% reduction on `git status`, `git log`, `ls -la`, `find`,
 and recognizable MCP/task text shapes via the tee-backed `generic-text`
 fallback.
 
+Before mutating any model-facing text, QTK also redacts common secrets such as
+AWS keys, GitHub PATs, AI provider keys, bearer tokens, private keys, and
+secret-like environment/config assignments. The same redaction pass protects
+tee files written for exact-output recovery.
+
 It also has a conservative `tool.execute.before` hook for Bash-only quiet
 rewrites such as `pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`, and Gradle `--quiet --console=plain`.
 Set `QTK_REWRITE_DISABLED=1` to disable only those rewrites, or
 `QTK_DISABLED=1` to disable the plugin.
+
+For live diagnostics, set `[qtk] log_level = "debug"` in `.opencode/qtk.toml`
+or launch with `QTK_DEBUG=1`. Debug logs show per-call sizes, token estimates,
+compressor names, pass-through reasons, and redaction counts without logging raw
+tool output.
 
 The package also loads bundled RTK-compatible TOML filters by default. For
 per-project custom compressors or overrides, drop TOML files into

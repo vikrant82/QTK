@@ -24,6 +24,8 @@ The format is designed to be compatible with RTK's TOML filter format
 `packages/qtk-filters/imported/`; the plugin packages those imported filters
 and loads them by default before built-in compressors.
 
+For a compact copy-pasteable starter, see `docs/examples/filter.toml`.
+
 ---
 
 ## File location and naming

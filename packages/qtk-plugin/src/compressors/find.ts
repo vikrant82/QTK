@@ -4,11 +4,8 @@
 // paths by their containing directory and show a capped sample per group.
 
 import { dirname, basename } from "node:path/posix";
-import type { Compressor } from "../types.ts";
-
-const MAX_GROUPS = 20;
-const MAX_NAMES_PER_GROUP = 8;
-const MAX_INPUT_BYTES = 500_000;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 export const findCompressor: Compressor = {
   name: "find",
@@ -25,8 +22,14 @@ export const findCompressor: Compressor = {
     return true;
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 200 || raw.length > MAX_INPUT_BYTES || raw.includes("\0")) {
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 200, {
+      min: 0,
+    });
+    const maxInputBytes = intOption(ctx.config, "max_input_bytes", 500_000, {
+      min: 1_000,
+    });
+    if (!raw || raw.length < minInputBytes || raw.length > maxInputBytes || raw.includes("\0")) {
       return raw;
     }
 
@@ -36,7 +39,11 @@ export const findCompressor: Compressor = {
       .filter(Boolean)
       .filter(looksLikePath);
 
-    if (paths.length < 20) return raw;
+    const minPaths = intOption(ctx.config, "min_paths", 20, {
+      min: 1,
+      max: 1000,
+    });
+    if (paths.length < minPaths) return raw;
 
     const groups = new Map<string, string[]>();
     for (const path of paths) {
@@ -53,19 +60,29 @@ export const findCompressor: Compressor = {
     const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
     const out: string[] = [`${paths.length} paths in ${groups.size} directories:`];
 
-    for (const [dir, names] of sorted.slice(0, MAX_GROUPS)) {
+    const maxGroups = intOption(ctx.config, "max_groups", 20, {
+      min: 1,
+      max: 500,
+    });
+    const maxNamesPerGroup = intOption(ctx.config, "max_names_per_group", 8, {
+      min: 1,
+      max: 100,
+    });
+    for (const [dir, names] of sorted.slice(0, maxGroups)) {
       names.sort((a, b) => a.localeCompare(b));
-      const shown = names.slice(0, MAX_NAMES_PER_GROUP).join(", ");
+      const shown = names.slice(0, maxNamesPerGroup).join(", ");
       const more =
-        names.length > MAX_NAMES_PER_GROUP
-          ? `, ... +${names.length - MAX_NAMES_PER_GROUP}`
+        names.length > maxNamesPerGroup
+          ? `, ... +${names.length - maxNamesPerGroup}`
           : "";
       out.push(`  ${dir} (${names.length}): ${shown}${more}`);
     }
 
-    if (sorted.length > MAX_GROUPS) {
-      const remaining = sorted.slice(MAX_GROUPS).reduce((n, [, names]) => n + names.length, 0);
-      out.push(`  ... ${sorted.length - MAX_GROUPS} more dirs (${remaining} paths)`);
+    if (sorted.length > maxGroups) {
+      const remaining = sorted
+        .slice(maxGroups)
+        .reduce((n, [, names]) => n + names.length, 0);
+      out.push(`  ... ${sorted.length - maxGroups} more dirs (${remaining} paths)`);
     }
 
     const result = out.join("\n");

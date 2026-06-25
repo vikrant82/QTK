@@ -13,9 +13,8 @@
 // signature outline — top-level imports, exports, function/class
 // definitions. The agent can then ask for a specific range with offset/limit.
 
-import type { Compressor } from "../types.ts";
-
-const DEFAULT_THRESHOLD = 200;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 // Patterns that identify "structural" lines worth keeping in an outline.
 // These are heuristic — designed to capture the shape of code, not parse it.
@@ -55,8 +54,11 @@ export const readToolCompressor: Compressor = {
     return tool.toLowerCase() === "read";
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 4000) return raw; // small files, leave alone
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 4000, {
+      min: 0,
+    });
+    if (!raw || raw.length < minInputBytes) return raw; // small files, leave alone
 
     // opencode's Read tool wraps content in <file>...</file> tags with
     // line-numbered content. We work inside that.
@@ -72,7 +74,13 @@ export const readToolCompressor: Compressor = {
       return raw;
     }
 
-    if (lines.length < DEFAULT_THRESHOLD) return raw;
+    const outlineThresholdLines = intOption(
+      ctx.config,
+      "outline_threshold_lines",
+      200,
+      { min: 1, max: 100_000 },
+    );
+    if (lines.length < outlineThresholdLines) return raw;
 
     // Build outline: every structural line, plus context line numbers
     const outline: string[] = [];
@@ -86,18 +94,30 @@ export const readToolCompressor: Compressor = {
 
     if (outline.length === 0 || outline.length > lines.length * 0.5) {
       // Couldn't outline confidently — fall back to head + tail
-      const head = lines.slice(0, 40).join("\n");
-      const tail = lines.slice(-20).join("\n");
-      const result = `${head}\n... <${lines.length - 60} lines omitted; call Read with offset to see more> ...\n${tail}`;
+      const headLines = intOption(ctx.config, "head_lines", 40, {
+        min: 1,
+        max: 500,
+      });
+      const tailLines = intOption(ctx.config, "tail_lines", 20, {
+        min: 1,
+        max: 500,
+      });
+      const head = lines.slice(0, headLines).join("\n");
+      const tail = lines.slice(-tailLines).join("\n");
+      const omitted = Math.max(0, lines.length - headLines - tailLines);
+      const result = `${head}\n... <${omitted} lines omitted; call Read with offset to see more> ...\n${tail}`;
       return result.length < raw.length
         ? wrapInOutline(result, lines.length)
         : raw;
     }
 
     // Cap outline size at 100 lines
-    const MAX_OUTLINE = 100;
-    const truncated = outline.length > MAX_OUTLINE;
-    const shown = truncated ? outline.slice(0, MAX_OUTLINE) : outline;
+    const maxOutlineLines = intOption(ctx.config, "max_outline_lines", 100, {
+      min: 1,
+      max: 1000,
+    });
+    const truncated = outline.length > maxOutlineLines;
+    const shown = truncated ? outline.slice(0, maxOutlineLines) : outline;
 
     const out: string[] = [];
     out.push(
@@ -105,7 +125,7 @@ export const readToolCompressor: Compressor = {
     );
     out.push(...shown);
     if (truncated) {
-      out.push(`... +${outline.length - MAX_OUTLINE} more structural lines`);
+      out.push(`... +${outline.length - maxOutlineLines} more structural lines`);
     }
     out.push("</file-outline>");
     out.push(

@@ -344,13 +344,34 @@ class CircuitBreaker {
 
 ## 9. Configuration
 
-`.opencode/qtk.toml` (or `.opencode/qtk/config.toml`):
+Config loading order:
+
+1. `~/.config/qtk/qtk.toml` or `$XDG_CONFIG_HOME/qtk/qtk.toml`
+2. `<project>/.opencode/qtk.toml`
+
+Project config is merged over global config. Minimal shape:
 
 ```toml
 [qtk]
 enabled = true                # master kill switch
 log_level = "info"            # debug | info | warn | error
 dedup_ttl_seconds = 60        # cache TTL
+
+[qtk.compression]
+min_input_bytes = 200         # global compression threshold
+
+[qtk.rewrite]
+enabled = true                # safe Bash quiet rewrites
+
+[qtk.redaction]
+enabled = true                # model-facing redaction; tee files still redact
+
+[qtk.sidecar]
+enabled = true                # optional qtk-core parsers
+request_timeout_ms = 1000
+startup_timeout_ms = 1500
+max_restarts = 3
+disabled = []                 # sidecar wrapper names to skip
 
 [qtk.tee]
 enabled = true
@@ -362,29 +383,34 @@ prune_days = 7                # delete tee files older than this at session star
 enabled = true
 database = ".opencode/qtk-stats.sqlite"
 
-[qtk.compressors]
-# Override defaults per-compressor
-git_status = { enabled = true, max_files_shown = 20 }
-ls = { enabled = true, max_entries_shown = 40 }
-rg = { enabled = true, max_files_shown = 15, max_matches_per_file = 3 }
-pytest = { enabled = true, show_passing_summary = true }
+[qtk.filters]
+bundled = true                # packaged RTK-compatible filters
+project = true                # .opencode/qtk/filters/*.toml
+disabled = []                 # filter names to skip
+
+[qtk.compressors.git_status]
+enabled = true                # set false to disable built-in compressor
+max_files_per_section = 15
+
+[qtk.compressors.generic_text]
+enabled = true                # lossy MCP/task fallback
+disabled_shapes = []          # json | diagnostics | path_list | markdown | repeated_lines
 
 # Per-tool overrides
 [qtk.tools.read]
 enabled = true
-outline_threshold_lines = 200    # if file > N lines, return outline only
+outline_threshold_lines = 200
 
 [qtk.tools.grep]
 enabled = true
-max_files_shown = 15
 
 [qtk.tools.glob]
 enabled = true
-cluster_threshold = 30           # cluster by directory if > N results
 ```
 
 All keys are optional; QTK ships with sensible defaults that work for the
-typical opencode user.
+typical opencode user. `docs/examples/qtk.toml` lists the full currently
+honored config surface.
 
 ---
 

@@ -4,12 +4,8 @@
 // funding/audit boilerplate, and repeated dependency tree rows. Keep errors and
 // meaningful summaries, collapse deprecation/progress noise.
 
-import type { Compressor } from "../types.ts";
-
-const MAX_KEPT_LINES = 80;
-const MAX_DEPRECATIONS = 8;
-const MAX_DEPENDENCIES = 40;
-const MAX_INPUT_BYTES = 500_000;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 export const packageManagerCompressor: Compressor = {
   name: "package-manager",
@@ -22,10 +18,16 @@ export const packageManagerCompressor: Compressor = {
     return matchesPackageManagerCommand(cmd);
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 200 || raw.length > MAX_INPUT_BYTES) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 200, {
+      min: 0,
+    });
+    const maxInputBytes = intOption(ctx.config, "max_input_bytes", 500_000, {
+      min: 1_000,
+    });
+    if (!raw || raw.length < minInputBytes || raw.length > maxInputBytes) return raw;
 
-    const dependencyTree = compressDependencyTree(raw);
+    const dependencyTree = compressDependencyTree(raw, ctx.config);
     if (dependencyTree) return dependencyTree;
 
     const lines = raw.split("\n");
@@ -53,7 +55,11 @@ export const packageManagerCompressor: Compressor = {
       }
       const deprecated = deprecatedPackage(trimmed);
       if (deprecated) {
-        if (deprecations.length < MAX_DEPRECATIONS) deprecations.push(deprecated);
+        const maxDeprecations = intOption(ctx.config, "max_deprecations", 8, {
+          min: 0,
+          max: 100,
+        });
+        if (deprecations.length < maxDeprecations) deprecations.push(deprecated);
         continue;
       }
 
@@ -74,10 +80,14 @@ export const packageManagerCompressor: Compressor = {
       out.push(`deprecated: ${deprecations.join(", ")}`);
     }
 
-    const body = kept.slice(0, MAX_KEPT_LINES);
+    const maxKeptLines = intOption(ctx.config, "max_kept_lines", 80, {
+      min: 1,
+      max: 1000,
+    });
+    const body = kept.slice(0, maxKeptLines);
     out.push(...body);
-    if (kept.length > MAX_KEPT_LINES) {
-      out.push(`... +${kept.length - MAX_KEPT_LINES} more meaningful lines`);
+    if (kept.length > maxKeptLines) {
+      out.push(`... +${kept.length - maxKeptLines} more meaningful lines`);
     }
 
     const result = out.join("\n").trim();
@@ -97,7 +107,10 @@ function matchesPackageManagerCommand(cmd: string): boolean {
   return false;
 }
 
-function compressDependencyTree(raw: string): string | null {
+function compressDependencyTree(
+  raw: string,
+  config: Record<string, unknown>,
+): string | null {
   const lines = raw.split("\n");
   const deps: string[] = [];
   let sawTreeMarker = false;
@@ -115,12 +128,20 @@ function compressDependencyTree(raw: string): string | null {
     if (dep) deps.push(dep);
   }
 
-  if (!sawTreeMarker || deps.length < 20) return null;
+  const minDependencies = intOption(config, "min_dependencies", 20, {
+    min: 1,
+    max: 1000,
+  });
+  if (!sawTreeMarker || deps.length < minDependencies) return null;
+  const maxDependencies = intOption(config, "max_dependencies", 40, {
+    min: 1,
+    max: 1000,
+  });
   const unique = [...new Set(deps)].sort((a, b) => a.localeCompare(b));
   const out: string[] = [`${unique.length} dependencies listed:`];
-  for (const dep of unique.slice(0, MAX_DEPENDENCIES)) out.push(`  ${dep}`);
-  if (unique.length > MAX_DEPENDENCIES) {
-    out.push(`  ... +${unique.length - MAX_DEPENDENCIES} more`);
+  for (const dep of unique.slice(0, maxDependencies)) out.push(`  ${dep}`);
+  if (unique.length > maxDependencies) {
+    out.push(`  ... +${unique.length - maxDependencies} more`);
   }
   const result = out.join("\n");
   return result.length < raw.length ? result : null;

@@ -23,10 +23,10 @@ is therefore:
    of QTK to npm/git.
 4. **Buggy compressor regex** — catastrophic backtracking on adversarial
    input could DoS the agent loop.
-5. **Tee files leaking secrets** — output we tee to disk may contain
-   secrets (AWS keys printed by `env`, OAuth tokens in `git remote -v` URLs,
-   etc.); if file perms are wrong, other users on a multi-user system can
-   read them.
+5. **Tool outputs leaking secrets** — model-facing output and tee files may
+   contain secrets (AWS keys printed by `env`, OAuth tokens in `git remote -v`
+   URLs, private keys, etc.). QTK redacts common patterns before mutating the
+   tool result for the model and before writing recovery tee files.
 
 ---
 
@@ -102,6 +102,14 @@ directory**. We do NOT honour environment variables for path overrides.
 to anywhere. QTK only reads `.opencode/qtk.toml` (which the user controls)
 and validates the resulting path is inside `cwd`.
 
+### 7. Model-facing text is redacted before mutation
+
+QTK applies a shared deterministic redaction pass at the final text boundary
+before writing compressed or pass-through output back into opencode's mutable
+tool result. This covers normal `{ output }` tools and MCP text/resource
+content shapes. Redacted output is wrapped with `<qtk-redacted count=N>` so the
+model can see that redaction happened without seeing the secret values.
+
 ---
 
 ## Soft rules — properties we maintain through code review
@@ -136,28 +144,24 @@ if (compressed.length > raw.length) {
 return compressed;
 ```
 
-### Secrets-aware tee
+### Secrets-aware model output and tee files
 
-Some commands emit secrets. The tee writer scans output for common secret
-patterns (AWS access keys, GitHub tokens, common API key prefixes) and
-either:
-
-- redacts them inline before writing, OR
-- writes a placeholder file and a separate `.redacted` file (mode 0o600)
+Some commands emit secrets. The model-facing writer and tee writer share the
+same scanner for common secret patterns and redact them inline before the text
+is exposed to the model or written to disk.
 
 This is best-effort — we don't try to be a DLP solution. But the obvious
-cases shouldn't be on disk in plaintext.
+cases shouldn't be in model context or on disk in plaintext.
 
 Patterns scanned:
 
 - `AKIA[0-9A-Z]{16}` (AWS access key)
 - `ASIA[0-9A-Z]{16}` (AWS temp credentials)
-- `ghp_[A-Za-z0-9_]{36,}` (GitHub PAT classic)
-- `github_pat_[A-Za-z0-9_]{82}` (GitHub PAT fine-grained)
-- `sk-[A-Za-z0-9]{40,}` (OpenAI / Anthropic key)
-- `xoxb-[0-9]+-[0-9]+-[0-9]+-[a-z0-9]+` (Slack bot token)
-- Strings matching `[A-Za-z0-9+/]{40,}={0,2}` AFTER a `password|secret|token|key` keyword on the same line
-- Bearer tokens in `Authorization:` headers (e.g. from `curl -v`)
+- GitHub PATs (`ghp_...`, `github_pat_...`)
+- AI provider keys (`sk-...`, `sk-ant-...`, Google `AIza...`)
+- Slack, Stripe, npm, PyPI, Docker Hub, GitLab, SendGrid, Datadog, and Sentry token shapes
+- JWTs, bearer tokens, connection strings, and private key blocks/headers
+- Common `password|secret|token|key|credential|auth|private|access_key` assignments, with false-positive guards for fields such as `author`, `authority`, and `tokenizer`
 
 ---
 
@@ -197,7 +201,7 @@ of QTK:
 | What URLs does QTK call?                               | None. There is no HTTP client.                                                                   |
 | Where is telemetry sent?                               | Local SQLite. No network code exists.                                                            |
 | Can a malicious command output execute code via QTK?   | No — QTK never executes anything.                                                                |
-| Where does QTK write to disk?                          | `.opencode/qtk-tee/` (mode 0o700), `.opencode/qtk-stats.sqlite`. Nowhere else.                   |
+| Where does QTK write to disk?                          | `.opencode/qtk-tee/` (mode 0o700), `.opencode/qtk-stats.sqlite`, `.opencode/qtk-savings.json`.   |
 | Permissions on tee files?                              | 0o600 explicit                                                                                   |
 | Can the tee directory be redirected?                   | Only via `.opencode/qtk.toml`, must canonicalise to inside project. Env vars are ignored.        |
 | Does QTK auto-update?                                  | No.                                                                                              |
@@ -300,4 +304,3 @@ you want to be named).
 Default: coordinated disclosure with a 90-day deadline from initial
 acknowledgement. If a fix isn't practical within that window, we'll
 discuss extensions or partial disclosures with the reporter.
-
