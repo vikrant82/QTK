@@ -19,6 +19,7 @@ enabled = true              # model-facing redaction; tee files still redact on 
 
 [qtk.sidecar]
 enabled = true              # optional qtk-core Rust parsers if binary is installed
+path = "/Users/chauv/vibe-tools/QTK/packages/qtk-core/target/release/qtk-core"
 request_timeout_ms = 1000
 startup_timeout_ms = 1500
 max_restarts = 3
