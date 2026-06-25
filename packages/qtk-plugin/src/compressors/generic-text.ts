@@ -29,6 +29,8 @@ const EXCLUDED_TOOLS = new Set([
   "serena_rename_memory",
   "serena_list_memories",
   "serena_read_memory",
+  "serena_initial_instructions",
+  "serena_onboarding",
   "serena_find_symbol",
   "serena_find_declaration",
   "serena_find_implementations",

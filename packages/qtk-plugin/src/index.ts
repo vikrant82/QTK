@@ -46,6 +46,11 @@ import {
 } from "./logger.ts";
 import type { CompressionOutcome, QtkConfig } from "./types.ts";
 
+const HARD_PASSTHROUGH_TOOLS = new Set([
+  "serena_initial_instructions",
+  "serena_onboarding",
+]);
+
 export const QtkPlugin: Plugin = async ({ directory }) => {
   const projectRoot = directory ?? process.cwd();
   if (isTruthyEnv(process.env.QTK_DISABLED)) {
@@ -328,6 +333,16 @@ async function processCall(
   }
   const raw = target.text;
   const args = extractHookArgs(input, output);
+  if (isHardPassthroughTool(input.tool)) {
+    ctx.logger.debug("passthrough", {
+      tool: input.tool,
+      shape: target.shape,
+      reason: "tool_exempt",
+      bytes: formatBytes(raw.length),
+      tok: estimateTokens(raw),
+    });
+    return;
+  }
   if (hasPerCallQtkDisabled(input, args)) {
     ctx.logger.debug("passthrough", {
       ...logFields(input, args),
@@ -802,6 +817,10 @@ function hasPerCallQtkDisabled(
   if (!command) return false;
   const env = readLeadingEnvAssignments(command);
   return isTruthyEnv(env.QTK_DISABLED);
+}
+
+function isHardPassthroughTool(tool: string): boolean {
+  return HARD_PASSTHROUGH_TOOLS.has(tool.toLowerCase());
 }
 
 function readLeadingEnvAssignments(command: string): Record<string, string> {
