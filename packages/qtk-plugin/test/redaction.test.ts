@@ -60,9 +60,22 @@ after`;
     const result = redactModelText("token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef12");
 
     expect(result.count).toBe(1);
-    expect(result.text).toContain("<qtk-redacted count=1>");
+    expect(result.text).toContain('<qtk-redacted count=1 categories=["github-token"]>');
     expect(result.text).toContain("[REDACTED_SECRET_VALUE]");
     expect(result.text).toContain("</qtk-redacted>");
+  });
+
+  test("reports redaction categories", () => {
+    const result = redactModelText([
+      "token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef12",
+      'bearer_token="launchpad-token"',
+    ].join("\n"));
+
+    expect(result.count).toBe(2);
+    expect(result.categories).toEqual(["github-token", "secret-literal"]);
+    expect(result.text).toContain(
+      '<qtk-redacted count=2 categories=["github-token","secret-literal"]>',
+    );
   });
 
   test("leaves benign short strings and identifiers unchanged", () => {

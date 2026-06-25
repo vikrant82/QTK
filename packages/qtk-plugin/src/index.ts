@@ -685,7 +685,7 @@ function maybeRedactModelText(
   text: string,
   redactionEnabled: boolean,
 ): ReturnType<typeof redactModelText> {
-  if (!redactionEnabled) return { text, count: 0 };
+  if (!redactionEnabled) return { text, count: 0, categories: [] };
   return redactModelText(text);
 }
 
