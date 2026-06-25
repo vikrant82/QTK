@@ -253,7 +253,7 @@ NDJSON protocol over stdin/stdout (one JSON object per line). Long-lived subproc
 
 - **No network code anywhere.** The Rust crate has no HTTP deps. The TS plugin has no HTTP deps. We literally cannot phone home.
 - **Tee files are mode `0o600`, directory `0o700`.** Path-confined to the project root.
-- **Secrets-aware redaction** on tee files: AWS access keys, GitHub PATs, OpenAI keys (`sk-...`), Slack tokens (`xoxb-...`), `Bearer ...` headers — all redacted before write.
+- **Secrets-aware redaction** on model-facing output and tee files: AWS access keys, GitHub PATs, OpenAI/Anthropic keys (`sk-...`), Slack tokens (`xoxb-...`), private keys, common secret assignments, and `Bearer ...` headers are redacted before model mutation or disk write.
 - **`unsafe_code = "deny"`** in the Rust crate.
 - **Circuit breaker:** any compressor that throws 3× in a session is automatically disabled for the rest of the session.
 - **Length-monotonicity guard:** if a compressor ever produces output ≥ its input, the original is returned. Compression should never make things worse.
@@ -388,6 +388,15 @@ bun run packages/qtk-plugin/src/cli/gain.ts
 
 Or query the SQLite DB directly at `.opencode/qtk-stats.sqlite`.
 
+For live debugging, set `[qtk] log_level = "debug"` in `.opencode/qtk.toml`
+or launch opencode with `QTK_DEBUG=1`. QTK logs compact per-call lines such as
+`[qtk] compressed tool=bash ... bytes=2.2kB→733B saved=67.3%` to the plugin
+process log; raw tool output is not logged.
+
+See `docs/examples/qtk.toml` for the complete currently honored runtime config,
+including global config (`~/.config/qtk/qtk.toml`), project overrides, disabling
+Bash rewrites/sidecar/filters/lossy `generic-text`, and per-compressor caps.
+
 ---
 
 ## Architecture
@@ -451,7 +460,7 @@ QTK/
 │   │   │   ├── dsl/                ← Phase 2: TOML filter DSL
 │   │   │   ├── sidecar/            ← Phase 3: Rust subprocess client
 │   │   │   └── cli/                ← `qtk gain` analytics
-│   │   └── test/                   ← 160 TS tests
+│   │   └── test/                   ← 171 TS tests
 │   ├── qtk-core/                   ← Phase 3 Rust crate (1.98 MB binary)
 │   │   ├── src/
 │   │   │   ├── main.rs             ← NDJSON read loop
@@ -472,9 +481,9 @@ QTK/
 ## Tests
 
 ```bash
-bun test                          # 160 TS tests
+bun test                          # 171 TS tests
 cd packages/qtk-core && cargo test --release   # 22 Rust tests
-# total: 182 passing, 0 failing
+# total: 193 passing, 0 failing
 ```
 
 Coverage:
@@ -484,7 +493,7 @@ Coverage:
 | Phase 1/4 compressors        | 52    | Command/tool/generic compressors, fixtures, adversarial inputs |
 | Session cache                | 3     | Fingerprint stability, hash check, LRU pruning          |
 | Circuit breaker              | 2     | 3-strike disable, per-compressor isolation              |
-| Tee secret redaction         | 4     | AWS, GitHub PAT, Bearer, benign-passthrough             |
+| Secret redaction             | 13    | Model-facing + tee redaction, pass-through/compressed/MCP paths, false-positive guards |
 | Phase 2 TOML DSL             | 39    | Parser, spec validator, runtime, loader, end-to-end     |
 | Phase 3 Rust parsers         | 22    | All 4 parsers, malformed input, length-monotonicity     |
 | Phase 3 sidecar integration  | 10    | Real binary spawn, hello, concurrent ids, stop/restart  |

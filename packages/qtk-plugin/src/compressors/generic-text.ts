@@ -4,12 +4,8 @@
 // shapes and returns raw unchanged for anything ambiguous.
 
 import { basename, dirname } from "node:path/posix";
-import type { Compressor } from "../types.ts";
-
-const MIN_INPUT_BYTES = 500;
-const MAX_INPUT_BYTES = 500_000;
-const MAX_GROUPS = 20;
-const MAX_ITEMS_PER_GROUP = 8;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption, numberOption, stringArrayOption } from "../options.ts";
 const EXCLUDED_TOOLS = new Set([
   "apply_patch",
   "edit",
@@ -55,17 +51,23 @@ export const genericTextCompressor: Compressor = {
     return normalized === "task" || normalized.includes("_");
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < MIN_INPUT_BYTES || raw.length > MAX_INPUT_BYTES) {
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 500, {
+      min: 0,
+    });
+    const maxInputBytes = intOption(ctx.config, "max_input_bytes", 500_000, {
+      min: 1_000,
+    });
+    if (!raw || raw.length < minInputBytes || raw.length > maxInputBytes) {
       return raw;
     }
 
     for (const candidate of [
-      compressJson(raw),
-      compressDiagnostics(raw),
-      compressPathList(raw),
-      compressRepeatedLines(raw),
-      compressMarkdown(raw),
+      compressJson(raw, ctx.config),
+      compressDiagnostics(raw, ctx.config),
+      compressPathList(raw, ctx.config),
+      compressRepeatedLines(raw, ctx.config),
+      compressMarkdown(raw, ctx.config),
     ]) {
       if (candidate && candidate.length < raw.length) return candidate;
     }
@@ -73,7 +75,8 @@ export const genericTextCompressor: Compressor = {
   },
 };
 
-function compressJson(raw: string): string | null {
+function compressJson(raw: string, config: Record<string, unknown>): string | null {
+  if (stringArrayOption(config, "disabled_shapes").includes("json")) return null;
   const trimmed = raw.trim();
   if (!/^[{[]/.test(trimmed)) return null;
   let value: unknown;
@@ -83,31 +86,44 @@ function compressJson(raw: string): string | null {
     return null;
   }
 
-  const out = ["json summary:", ...summarizeJson(value, "$", 0)];
+  const maxKeys = intOption(config, "json_max_keys", 12, { min: 1, max: 200 });
+  const maxItems = intOption(config, "json_max_items", 8, { min: 1, max: 200 });
+  const maxDepth = intOption(config, "json_max_depth", 2, { min: 0, max: 10 });
+  const out = ["json summary:", ...summarizeJson(value, "$", 0, {
+    maxDepth,
+    maxItems,
+    maxKeys,
+  })];
   if (out.length < 3) return null;
   return shorter(raw, out.join("\n"));
 }
 
-function summarizeJson(value: unknown, path: string, depth: number): string[] {
-  if (depth > 2) return [`${path}: ${typeOf(value)}`];
+function summarizeJson(
+  value: unknown,
+  path: string,
+  depth: number,
+  opts: { readonly maxDepth: number; readonly maxItems: number; readonly maxKeys: number },
+): string[] {
+  if (depth > opts.maxDepth) return [`${path}: ${typeOf(value)}`];
   if (Array.isArray(value)) {
     const out = [`${path}: array(${value.length})`];
-    if (value.length > 0) out.push(...summarizeJson(value[0], `${path}[]`, depth + 1));
+    if (value.length > 0) out.push(...summarizeJson(value[0], `${path}[]`, depth + 1, opts));
     return out;
   }
   if (isRecord(value)) {
     const entries = Object.entries(value);
     const keys = entries.map(([key]) => key);
-    const out = [`${path}: object(${entries.length}) keys=${keys.slice(0, 12).join(", ")}${keys.length > 12 ? ", ..." : ""}`];
-    for (const [key, child] of entries.slice(0, 8)) {
-      out.push(...summarizeJson(child, `${path}.${key}`, depth + 1));
+    const out = [`${path}: object(${entries.length}) keys=${keys.slice(0, opts.maxKeys).join(", ")}${keys.length > opts.maxKeys ? ", ..." : ""}`];
+    for (const [key, child] of entries.slice(0, opts.maxItems)) {
+      out.push(...summarizeJson(child, `${path}.${key}`, depth + 1, opts));
     }
     return out;
   }
   return [`${path}: ${typeOf(value)}`];
 }
 
-function compressDiagnostics(raw: string): string | null {
+function compressDiagnostics(raw: string, config: Record<string, unknown>): string | null {
+  if (stringArrayOption(config, "disabled_shapes").includes("diagnostics")) return null;
   const lines = raw.split("\n").filter(Boolean);
   const byFile = new Map<string, string[]>();
 
@@ -120,16 +136,29 @@ function compressDiagnostics(raw: string): string | null {
   }
 
   const total = [...byFile.values()].reduce((sum, items) => sum + items.length, 0);
-  if (total < 8 || total < lines.length * 0.35) return null;
+  const minDiagnostics = intOption(config, "diagnostics_min_count", 8, {
+    min: 1,
+    max: 1000,
+  });
+  const minRatio = numberOption(config, "diagnostics_min_ratio", 0.35, {
+    min: 0.01,
+    max: 1,
+  });
+  if (total < minDiagnostics || total < lines.length * minRatio) return null;
 
   const groups = [...byFile.entries()].sort((a, b) => b[1].length - a[1].length);
   const out = [`${total} diagnostics across ${byFile.size} files:`];
-  for (const [file, messages] of groups.slice(0, MAX_GROUPS)) {
+  const maxGroups = intOption(config, "max_groups", 20, { min: 1, max: 500 });
+  const maxMessagesPerGroup = intOption(config, "diagnostics_per_file", 3, {
+    min: 1,
+    max: 100,
+  });
+  for (const [file, messages] of groups.slice(0, maxGroups)) {
     out.push(`${file} (${messages.length})`);
-    for (const message of messages.slice(0, 3)) out.push(`  ${message}`);
-    if (messages.length > 3) out.push(`  ... +${messages.length - 3} more`);
+    for (const message of messages.slice(0, maxMessagesPerGroup)) out.push(`  ${message}`);
+    if (messages.length > maxMessagesPerGroup) out.push(`  ... +${messages.length - maxMessagesPerGroup} more`);
   }
-  if (groups.length > MAX_GROUPS) out.push(`... +${groups.length - MAX_GROUPS} more files`);
+  if (groups.length > maxGroups) out.push(`... +${groups.length - maxGroups} more files`);
   return shorter(raw, out.join("\n"));
 }
 
@@ -142,11 +171,17 @@ function parseDiagnostic(line: string): { file: string; message: string } | null
   return null;
 }
 
-function compressPathList(raw: string): string | null {
+function compressPathList(raw: string, config: Record<string, unknown>): string | null {
+  if (stringArrayOption(config, "disabled_shapes").includes("path_list")) return null;
   const lines = raw.split("\n").map((line) => line.trim()).filter(Boolean);
-  if (lines.length < 20) return null;
+  const minPaths = intOption(config, "path_min_count", 20, { min: 1, max: 1000 });
+  if (lines.length < minPaths) return null;
   const paths = lines.filter(looksLikePath);
-  if (paths.length < 20 || paths.length < lines.length * 0.75) return null;
+  const minRatio = numberOption(config, "path_min_ratio", 0.75, {
+    min: 0.01,
+    max: 1,
+  });
+  if (paths.length < minPaths || paths.length < lines.length * minRatio) return null;
 
   const groups = new Map<string, string[]>();
   for (const path of paths) {
@@ -160,31 +195,49 @@ function compressPathList(raw: string): string | null {
 
   const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
   const out = [`${paths.length} paths in ${groups.size} directories:`];
-  for (const [dir, names] of sorted.slice(0, MAX_GROUPS)) {
+  const maxGroups = intOption(config, "max_groups", 20, { min: 1, max: 500 });
+  const maxItemsPerGroup = intOption(config, "max_items_per_group", 8, {
+    min: 1,
+    max: 100,
+  });
+  for (const [dir, names] of sorted.slice(0, maxGroups)) {
     names.sort((a, b) => a.localeCompare(b));
-    const shown = names.slice(0, MAX_ITEMS_PER_GROUP).join(", ");
-    const more = names.length > MAX_ITEMS_PER_GROUP ? `, ... +${names.length - MAX_ITEMS_PER_GROUP}` : "";
+    const shown = names.slice(0, maxItemsPerGroup).join(", ");
+    const more = names.length > maxItemsPerGroup ? `, ... +${names.length - maxItemsPerGroup}` : "";
     out.push(`  ${dir} (${names.length}): ${shown}${more}`);
   }
-  if (sorted.length > MAX_GROUPS) out.push(`  ... +${sorted.length - MAX_GROUPS} more dirs`);
+  if (sorted.length > maxGroups) out.push(`  ... +${sorted.length - maxGroups} more dirs`);
   return shorter(raw, out.join("\n"));
 }
 
-function compressMarkdown(raw: string): string | null {
+function compressMarkdown(raw: string, config: Record<string, unknown>): string | null {
+  if (stringArrayOption(config, "disabled_shapes").includes("markdown")) return null;
   const lines = raw.split("\n");
-  if (lines.length < 80) return null;
+  const minLines = intOption(config, "markdown_min_lines", 80, {
+    min: 1,
+    max: 100_000,
+  });
+  if (lines.length < minLines) return null;
 
   const out: string[] = ["text outline:"];
   const visible = stripMarkdownCodeBlocks(lines).map((line) => line.trim());
   const headings = visible.filter((line) => /^#{1,4}\s+/.test(line));
-  const bullets = visible.filter((line) => /^[-*+]\s+\S/.test(line)).slice(0, 20);
+  const maxBullets = intOption(config, "markdown_max_bullets", 20, {
+    min: 0,
+    max: 500,
+  });
+  const bullets = visible.filter((line) => /^[-*+]\s+\S/.test(line)).slice(0, maxBullets);
   const prose = visible
     .filter((line) => line && !/^#{1,4}\s+/.test(line) && !/^[-*+]\s+\S/.test(line))
-    .slice(0, 8);
+    .slice(0, intOption(config, "markdown_max_lead_lines", 8, { min: 0, max: 100 }));
 
   if (headings.length === 0 && bullets.length < 10) return null;
-  for (const heading of headings.slice(0, 30)) out.push(trim(heading));
-  if (headings.length > 30) out.push(`... +${headings.length - 30} more headings`);
+  const maxHeadings = intOption(config, "markdown_max_headings", 30, {
+    min: 1,
+    max: 500,
+  });
+  for (const heading of headings.slice(0, maxHeadings)) out.push(trim(heading));
+  if (headings.length > maxHeadings) out.push(`... +${headings.length - maxHeadings} more headings`);
   if (prose.length > 0) {
     out.push("lead:");
     for (const line of prose) out.push(`  ${trim(line)}`);
@@ -197,24 +250,38 @@ function compressMarkdown(raw: string): string | null {
   return shorter(raw, out.join("\n"));
 }
 
-function compressRepeatedLines(raw: string): string | null {
+function compressRepeatedLines(raw: string, config: Record<string, unknown>): string | null {
+  if (stringArrayOption(config, "disabled_shapes").includes("repeated_lines")) return null;
   const lines = raw.split("\n").filter(Boolean);
-  if (lines.length < 30) return null;
+  const minLines = intOption(config, "repeated_min_lines", 30, { min: 1, max: 100_000 });
+  if (lines.length < minLines) return null;
   const counts = new Map<string, number>();
   for (const line of lines) {
     const normalized = normalizeLogEntropy(line);
     counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
   }
   const repeated = [...counts.entries()]
-    .filter(([, count]) => count >= 3)
+    .filter(([, count]) => count >= intOption(config, "repeated_min_count", 3, { min: 2, max: 1000 }))
     .sort((a, b) => b[1] - a[1]);
   const repeatedCount = repeated.reduce((sum, [, count]) => sum + count, 0);
-  if (repeated.length === 0 || repeatedCount < lines.length * 0.5) return null;
+  const minRatio = numberOption(config, "repeated_min_ratio", 0.5, {
+    min: 0.01,
+    max: 1,
+  });
+  if (repeated.length === 0 || repeatedCount < lines.length * minRatio) return null;
 
-  const notable = uniqueNotableLines(lines).slice(0, 20);
+  const maxNotable = intOption(config, "repeated_max_notable", 20, {
+    min: 0,
+    max: 500,
+  });
+  const maxRepeated = intOption(config, "repeated_max_groups", 20, {
+    min: 1,
+    max: 500,
+  });
+  const notable = uniqueNotableLines(lines).slice(0, maxNotable);
   const out = [`${lines.length} lines; ${repeatedCount} repeated after normalization:`];
-  for (const [line, count] of repeated.slice(0, 20)) out.push(`  x${count}: ${trim(normalizeLogEntropy(line))}`);
-  if (repeated.length > 20) out.push(`  ... +${repeated.length - 20} more repeated lines`);
+  for (const [line, count] of repeated.slice(0, maxRepeated)) out.push(`  x${count}: ${trim(normalizeLogEntropy(line))}`);
+  if (repeated.length > maxRepeated) out.push(`  ... +${repeated.length - maxRepeated} more repeated lines`);
   if (notable.length > 0) {
     out.push("notable unique lines:");
     for (const line of notable) out.push(`  ${trim(line)}`);

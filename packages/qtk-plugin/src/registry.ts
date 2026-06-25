@@ -58,6 +58,19 @@ export class CompressorRegistry {
     return null;
   }
 
+  disable(names: readonly string[]): void {
+    if (names.length === 0) return;
+    const disabled = new Set(names);
+    this.compressors = this.compressors.filter((c) => !disabled.has(c.name));
+  }
+
+  removeByPrefix(prefixes: readonly string[]): void {
+    if (prefixes.length === 0) return;
+    this.compressors = this.compressors.filter((c) => {
+      return !prefixes.some((prefix) => c.name.startsWith(prefix));
+    });
+  }
+
   /**
    * Prepend user-defined compressors (e.g. DSL filters loaded from
    * `.opencode/qtk/filters/`) so they take priority over built-ins

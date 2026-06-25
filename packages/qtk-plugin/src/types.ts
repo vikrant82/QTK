@@ -72,6 +72,29 @@ export interface QtkConfig {
   readonly logLevel: "debug" | "info" | "warn" | "error";
   readonly dedupTtlSeconds: number;
 
+  readonly compression: {
+    /** Output below this size is only redacted/cache-checked, not compressed. */
+    readonly minInputBytes: number;
+  };
+
+  readonly rewrite: {
+    readonly enabled: boolean;
+  };
+
+  readonly redaction: {
+    readonly enabled: boolean;
+  };
+
+  readonly sidecar: {
+    readonly enabled: boolean;
+    readonly requestTimeoutMs: number;
+    readonly startupTimeoutMs: number;
+    readonly maxRestarts: number;
+    readonly minInputBytes: number;
+    /** Disable sidecar wrappers by name, e.g. sidecar:junit-xml or junit-xml. */
+    readonly disabled: readonly string[];
+  };
+
   readonly tee: {
     readonly enabled: boolean;
     readonly directory: string;
@@ -89,6 +112,8 @@ export interface QtkConfig {
     readonly bundled: boolean;
     /** Load project-local filters from .opencode/qtk/filters. */
     readonly project: boolean;
+    /** Filter names to exclude after loading (e.g. dsl:bundled:helm). */
+    readonly disabled: readonly string[];
   };
 
   /** Per-compressor overrides. Free-form map; each compressor reads its own keys. */
