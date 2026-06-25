@@ -25,6 +25,7 @@ export interface AsyncCompressor {
 
 interface BuildOpts {
   client: SidecarClient;
+  minInputBytes?: number;
 }
 
 /** Detect `terraform plan` (and a few common subcommands that produce a plan). */
@@ -82,14 +83,17 @@ function matchesJunitFile(tool: string, args: Record<string, unknown>): boolean 
  * BEFORE the regular sync registry. They use the sidecar; if it's not
  * available they degrade to returning the input unchanged.
  */
-export function buildSidecarCompressors({ client }: BuildOpts): AsyncCompressor[] {
+export function buildSidecarCompressors({
+  client,
+  minInputBytes = 200,
+}: BuildOpts): AsyncCompressor[] {
   return [
     {
       name: "sidecar:terraform-plan",
       category: "infra",
       matches: matchesTerraformPlan,
       compress: async (raw) => {
-        if (raw.length < 200) return raw;
+        if (raw.length < minInputBytes) return raw;
         const res = await client.compress("terraform-plan", raw);
         if (!res || res.output.length >= raw.length) return raw;
         return res.output;
@@ -100,7 +104,7 @@ export function buildSidecarCompressors({ client }: BuildOpts): AsyncCompressor[
       category: "infra",
       matches: (t, a) => matchesKubectlGetStructured(t, a).matched,
       compress: async (raw, ctx) => {
-        if (raw.length < 200) return raw;
+        if (raw.length < minInputBytes) return raw;
         const { mode } = matchesKubectlGetStructured("bash", ctx.args);
         const name = mode === "json" ? "kubectl-json" : "kubectl-yaml";
         const res = await client.compress(name, raw);
@@ -113,7 +117,7 @@ export function buildSidecarCompressors({ client }: BuildOpts): AsyncCompressor[
       category: "test-runner",
       matches: matchesCargoJson,
       compress: async (raw) => {
-        if (raw.length < 200) return raw;
+        if (raw.length < minInputBytes) return raw;
         const res = await client.compress("cargo-json", raw);
         if (!res || res.output.length >= raw.length) return raw;
         return res.output;
@@ -124,7 +128,7 @@ export function buildSidecarCompressors({ client }: BuildOpts): AsyncCompressor[
       category: "test-runner",
       matches: matchesJunitFile,
       compress: async (raw) => {
-        if (raw.length < 200) return raw;
+        if (raw.length < minInputBytes) return raw;
         if (!looksLikeJunit(raw)) return raw;
         const res = await client.compress("junit-xml", raw);
         if (!res || res.output.length >= raw.length) return raw;
@@ -133,5 +137,4 @@ export function buildSidecarCompressors({ client }: BuildOpts): AsyncCompressor[
     },
   ];
 }
-
 

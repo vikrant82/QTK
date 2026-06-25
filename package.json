@@ -14,6 +14,7 @@
   },
   "scripts": {
     "build": "cd packages/qtk-plugin && bun run build",
+    "rebuild:all": "bash scripts/rebuild-all.sh",
     "test": "bun test",
     "typecheck": "bun x tsc --noEmit",
     "bench": "bun run scripts/benchmark.ts",

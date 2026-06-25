@@ -11,9 +11,8 @@
 // For failing runs, the model needs the FAILED lines + first 10 lines of
 // each traceback. The 500+ lines of header/progress can go.
 
-import type { Compressor } from "../types.ts";
-
-const TRACE_HEAD_LINES = 8;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 export const pytestCompressor: Compressor = {
   name: "pytest",
@@ -25,8 +24,19 @@ export const pytestCompressor: Compressor = {
     return /^(python\s+-m\s+pytest|pytest)\b/.test(cmd);
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 200) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 200, {
+      min: 0,
+    });
+    const traceHeadLines = intOption(ctx.config, "trace_head_lines", 8, {
+      min: 1,
+      max: 200,
+    });
+    const maxFailureBlocks = intOption(ctx.config, "max_failure_blocks", 20, {
+      min: 1,
+      max: 200,
+    });
+    if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
 
@@ -68,7 +78,7 @@ export const pytestCompressor: Compressor = {
       const sectionMatch = line.match(/^_{3,}\s+(.+?)\s+_{3,}$/);
       if (sectionMatch) {
         if (blockBuffer.length > 0) {
-          failureBlocks.push(blockBuffer.slice(0, TRACE_HEAD_LINES).join("\n"));
+          failureBlocks.push(blockBuffer.slice(0, traceHeadLines).join("\n"));
           blockBuffer = [];
         }
         inFailureBlock = true;
@@ -80,7 +90,7 @@ export const pytestCompressor: Compressor = {
         if (/^=+/.test(line)) {
           if (blockBuffer.length > 0) {
             failureBlocks.push(
-              blockBuffer.slice(0, TRACE_HEAD_LINES).join("\n"),
+              blockBuffer.slice(0, traceHeadLines).join("\n"),
             );
             blockBuffer = [];
           }
@@ -91,15 +101,18 @@ export const pytestCompressor: Compressor = {
       }
     }
     if (blockBuffer.length > 0) {
-      failureBlocks.push(blockBuffer.slice(0, TRACE_HEAD_LINES).join("\n"));
+      failureBlocks.push(blockBuffer.slice(0, traceHeadLines).join("\n"));
     }
 
     const out: string[] = [`pytest: ${summary}`];
     if (failureBlocks.length > 0) {
       out.push("");
-      for (const block of failureBlocks) {
+      for (const block of failureBlocks.slice(0, maxFailureBlocks)) {
         out.push(block);
         out.push("");
+      }
+      if (failureBlocks.length > maxFailureBlocks) {
+        out.push(`... +${failureBlocks.length - maxFailureBlocks} more failure blocks`);
       }
     } else if (failedLines.length > 0) {
       out.push("");

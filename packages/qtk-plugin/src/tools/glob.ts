@@ -3,9 +3,8 @@
 // For pattern matches that return many paths (e.g. `**/*.ts` in a large
 // monorepo), we cluster by common directory prefix and show counts.
 
-import type { Compressor } from "../types.ts";
-
-const CLUSTER_THRESHOLD = 30;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption, numberOption } from "../options.ts";
 
 export const globToolCompressor: Compressor = {
   name: "tool-glob",
@@ -15,11 +14,15 @@ export const globToolCompressor: Compressor = {
     return tool.toLowerCase() === "glob";
   },
 
-  compress(raw: string): string {
+  compress(raw: string, ctx: CompressorContext): string {
     if (!raw) return raw;
 
     const lines = raw.split("\n").filter((l) => l.length > 0);
-    if (lines.length < CLUSTER_THRESHOLD) return raw;
+    const clusterThreshold = intOption(ctx.config, "cluster_threshold", 30, {
+      min: 1,
+      max: 100_000,
+    });
+    if (lines.length < clusterThreshold) return raw;
 
     // Group paths by their top 2 directory components.
     // e.g. "packages/opencode/src/foo.ts" → cluster "packages/opencode/"
@@ -42,7 +45,11 @@ export const globToolCompressor: Compressor = {
 
     // If too many clusters at depth 2, the result will be just as messy
     // as the raw list. Bail out.
-    if (byCluster.size > lines.length * 0.7) return raw;
+    const maxClusterRatio = numberOption(ctx.config, "max_cluster_ratio", 0.7, {
+      min: 0.01,
+      max: 1,
+    });
+    if (byCluster.size > lines.length * maxClusterRatio) return raw;
 
     const sorted = [...byCluster.entries()].sort(
       (a, b) => b[1].length - a[1].length,
@@ -51,32 +58,46 @@ export const globToolCompressor: Compressor = {
     const out: string[] = [
       `${lines.length} paths in ${byCluster.size} clusters:`,
     ];
-    const MAX_CLUSTERS = 15;
-    for (const [dir, paths] of sorted.slice(0, MAX_CLUSTERS)) {
+    const maxClusters = intOption(ctx.config, "max_clusters", 15, {
+      min: 1,
+      max: 1000,
+    });
+    const samplePathsPerCluster = intOption(
+      ctx.config,
+      "sample_paths_per_cluster",
+      2,
+      { min: 0, max: 100 },
+    );
+    const maxExtensionsShown = intOption(ctx.config, "max_extensions_shown", 3, {
+      min: 0,
+      max: 50,
+    });
+    for (const [dir, paths] of sorted.slice(0, maxClusters)) {
       // Get unique extensions in this cluster
       const exts = new Set<string>();
       for (const p of paths) {
         const dot = p.lastIndexOf(".");
         if (dot > 0) exts.add(p.slice(dot));
       }
+      const shownExts = [...exts].slice(0, maxExtensionsShown).join(", ");
       const extLabel =
-        exts.size > 0
-          ? ` [${[...exts].slice(0, 3).join(", ")}${exts.size > 3 ? ", ..." : ""}]`
+        maxExtensionsShown > 0 && exts.size > 0
+          ? ` [${shownExts}${exts.size > maxExtensionsShown ? ", ..." : ""}]`
           : "";
 
       out.push(`  ${dir}/  (${paths.length}${extLabel})`);
       // Show first 2 paths from each cluster as samples
-      for (const p of paths.slice(0, 2)) {
+      for (const p of paths.slice(0, samplePathsPerCluster)) {
         out.push(`    ${p}`);
       }
-      if (paths.length > 2) {
-        out.push(`    ... +${paths.length - 2} more`);
+      if (paths.length > samplePathsPerCluster) {
+        out.push(`    ... +${paths.length - samplePathsPerCluster} more`);
       }
     }
-    if (sorted.length > MAX_CLUSTERS) {
-      const remaining = sorted.length - MAX_CLUSTERS;
+    if (sorted.length > maxClusters) {
+      const remaining = sorted.length - maxClusters;
       const remPaths = sorted
-        .slice(MAX_CLUSTERS)
+        .slice(maxClusters)
         .reduce((a, b) => a + b[1].length, 0);
       out.push(`  ... and ${remaining} more clusters (${remPaths} paths)`);
     }

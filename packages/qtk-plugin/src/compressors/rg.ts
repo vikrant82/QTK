@@ -16,10 +16,8 @@
 // Compressed: group by file, show top 3 matches per file by default,
 // then `... N more matches`.
 
-import type { Compressor } from "../types.ts";
-
-const MAX_FILES_SHOWN = 15;
-const MAX_MATCHES_PER_FILE = 3;
+import type { Compressor, CompressorContext } from "../types.ts";
+import { intOption } from "../options.ts";
 
 export const rgCompressor: Compressor = {
   name: "rg",
@@ -34,8 +32,23 @@ export const rgCompressor: Compressor = {
     return false;
   },
 
-  compress(raw: string): string {
-    if (!raw || raw.length < 200) return raw;
+  compress(raw: string, ctx: CompressorContext): string {
+    const minInputBytes = intOption(ctx.config, "min_input_bytes", 200, {
+      min: 0,
+    });
+    const maxFilesShown = intOption(ctx.config, "max_files_shown", 15, {
+      min: 1,
+      max: 500,
+    });
+    const maxMatchesPerFile = intOption(ctx.config, "max_matches_per_file", 3, {
+      min: 1,
+      max: 100,
+    });
+    const maxLineChars = intOption(ctx.config, "max_line_chars", 100, {
+      min: 20,
+      max: 1000,
+    });
+    if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
     // Detect format. Heuristic: if most lines start with `<path>:<num>:` it's
@@ -91,23 +104,26 @@ export const rgCompressor: Compressor = {
     const out: string[] = [];
     out.push(`${totalMatches} matches across ${byFile.size} files:`);
 
-    for (const [path, matches] of files.slice(0, MAX_FILES_SHOWN)) {
+    for (const [path, matches] of files.slice(0, maxFilesShown)) {
       const header =
         matches.length > 1 ? `${path} (${matches.length} matches)` : path;
       out.push(header);
-      for (const m of matches.slice(0, MAX_MATCHES_PER_FILE)) {
-        const text = m.text.length > 100 ? m.text.slice(0, 100) + "…" : m.text;
+      for (const m of matches.slice(0, maxMatchesPerFile)) {
+        const text =
+          m.text.length > maxLineChars
+            ? m.text.slice(0, maxLineChars) + "…"
+            : m.text;
         out.push(`  L${m.line}: ${text.trimStart()}`);
       }
-      if (matches.length > MAX_MATCHES_PER_FILE) {
-        out.push(`  ... +${matches.length - MAX_MATCHES_PER_FILE} more`);
+      if (matches.length > maxMatchesPerFile) {
+        out.push(`  ... +${matches.length - maxMatchesPerFile} more`);
       }
     }
 
-    if (files.length > MAX_FILES_SHOWN) {
-      const remaining = files.length - MAX_FILES_SHOWN;
+    if (files.length > maxFilesShown) {
+      const remaining = files.length - maxFilesShown;
       const remainMatches = files
-        .slice(MAX_FILES_SHOWN)
+        .slice(maxFilesShown)
         .reduce((a, b) => a + b[1].length, 0);
       out.push(`... and ${remaining} more files (${remainMatches} matches)`);
     }

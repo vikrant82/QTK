@@ -1,0 +1,30 @@
+# Example project-local QTK filter.
+# Copy to: <your opencode project>/.opencode/qtk/filters/docker-compose-ps.toml
+
+enabled = true
+command = ["docker compose ps", "docker-compose ps"]
+min_input_lines = 3
+
+# If the command emits an unexpected failure, leave it exact.
+pass_through_if = "(?i)error|fatal|permission denied"
+
+# Drop header/blank lines before matching.
+strip = [
+  "^NAME\\s+IMAGE",
+  "^\\s*$",
+]
+
+# Named capture groups become template fields.
+match = "^(?<name>\\S+)\\s+(?<image>\\S+)\\s+(?<status>.+?)\\s{2,}.*$"
+group_by = "status"
+template = "{status}: {n} containers ({joined.name})"
+
+header = "{matched}/{total} containers summarized"
+truncate = 20
+truncate_message = "... and {dropped} more containers"
+
+# Supported dedupe modes: none | lines | count
+dedupe = "none"
+
+# Unmatched lines after `match`: drop | keep | truncate
+unmatched = "drop"

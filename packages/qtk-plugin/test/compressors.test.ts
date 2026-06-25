@@ -116,6 +116,27 @@ no changes added to commit
     expect(out.length).toBeLessThan(input.length * 0.4);
   });
 
+  test("honors max_files_per_section option", () => {
+    const files = Array.from(
+      { length: 5 },
+      (_, i) => `\tmodified:   src/file-${i}.ts`,
+    );
+    const input = `On branch main
+Changes to be committed:
+${files.join("\n")}
+`;
+
+    const out = gitStatusCompressor.compress(input, {
+      ...CTX,
+      config: { max_files_per_section: 2 },
+    });
+
+    expect(out).toContain(
+      "modified src/file-0.ts, modified src/file-1.ts, ... +3 more",
+    );
+    expect(out).not.toContain("src/file-4.ts");
+  });
+
   test("clean tree returns 'clean working tree'", () => {
     const input = `On branch main
 Your branch is up to date with 'origin/main'.
@@ -512,6 +533,24 @@ describe("rg compressor", () => {
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("50 matches across 10 files");
   });
+
+  test("honors rg caps", () => {
+    const lines: string[] = [];
+    for (let f = 0; f < 4; f++) {
+      for (let m = 0; m < 4; m++) {
+        lines.push(`src/file-${f}.ts:${m + 1}:matching content ${m}`);
+      }
+    }
+    const input = lines.join("\n");
+    const out = rgCompressor.compress(input, {
+      ...CTX,
+      config: { max_files_shown: 2, max_matches_per_file: 1 },
+    });
+
+    expect(out).toContain("src/file-0.ts (4 matches)");
+    expect(out).toContain("... +3 more");
+    expect(out).toContain("... and 2 more files");
+  });
 });
 
 // ─── pytest ─────────────────────────────────────────────────────────────────
@@ -654,6 +693,26 @@ describe("Read tool compressor", () => {
     expect(out).toContain("class MyService");
   });
 
+  test("honors Read outline threshold", () => {
+    const lines = ["<file>"];
+    for (let i = 1; i <= 80; i++) {
+      const num = String(i).padStart(5, "0");
+      lines.push(
+        i === 1 ? `${num}| export function main() {}` : `${num}| const x${i} = ${i};`,
+      );
+    }
+    lines.push("</file>");
+    const input = lines.join("\n");
+
+    expect(readToolCompressor.compress(input, CTX)).toBe(input);
+    const out = readToolCompressor.compress(input, {
+      ...CTX,
+      config: { min_input_bytes: 0, outline_threshold_lines: 20 },
+    });
+
+    expect(out).toContain("<file-outline");
+  });
+
   test("short file passes through unchanged", () => {
     const input = `<file>
 00001| short file
@@ -711,6 +770,21 @@ describe("Glob tool compressor", () => {
   test("small lists pass through", () => {
     const input = ["src/a.ts", "src/b.ts", "src/c.ts"].join("\n");
     expect(globToolCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("honors Glob cluster threshold and caps", () => {
+    const paths = Array.from(
+      { length: 12 },
+      (_, i) => `packages/app/src/file-${i}.ts`,
+    );
+    const input = paths.join("\n");
+    const out = globToolCompressor.compress(input, {
+      ...CTX,
+      config: { cluster_threshold: 5, sample_paths_per_cluster: 1 },
+    });
+
+    expect(out).toContain("12 paths in");
+    expect(out).toContain("... +11 more");
   });
 });
 
@@ -786,7 +860,7 @@ describe("Tee secret redaction", () => {
     const input = "AWS_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE found in env";
     const out = teeInternal.redact(input);
     expect(out).not.toContain("AKIAIOSFODNN7EXAMPLE");
-    expect(out).toContain("redacted");
+    expect(out).toContain("[REDACTED]");
   });
 
   test("redacts GitHub PATs", () => {
@@ -798,7 +872,7 @@ describe("Tee secret redaction", () => {
   test("redacts Bearer tokens", () => {
     const input = "Authorization: Bearer sk-veryverysecret";
     const out = teeInternal.redact(input);
-    expect(out).toContain("Bearer <redacted>");
+    expect(out).toContain("[REDACTED]");
     expect(out).not.toContain("veryverysecret");
   });
 

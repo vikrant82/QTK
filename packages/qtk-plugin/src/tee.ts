@@ -8,28 +8,12 @@
 //     additionally verify here (defence in depth)
 //   - Secrets-aware redaction before write (best-effort)
 
-import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-
-const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/AKIA[0-9A-Z]{16}/g, "<aws-access-key-redacted>"],
-  [/ASIA[0-9A-Z]{16}/g, "<aws-temp-key-redacted>"],
-  [/ghp_[A-Za-z0-9_]{36,}/g, "<github-token-redacted>"],
-  [/github_pat_[A-Za-z0-9_]{82}/g, "<github-pat-redacted>"],
-  [/sk-[A-Za-z0-9]{40,}/g, "<openai-key-redacted>"],
-  [/xoxb-[0-9]+-[0-9]+-[0-9]+-[a-z0-9]+/g, "<slack-token-redacted>"],
-  [
-    /(?:Authorization|authorization):\s*Bearer\s+[^\s]+/g,
-    "Authorization: Bearer <redacted>",
-  ],
-];
+import { mkdir } from "node:fs/promises";
+import { redactSecrets } from "./redaction.ts";
 
 function redact(text: string): string {
-  let out = text;
-  for (const [pattern, replacement] of SECRET_PATTERNS) {
-    out = out.replace(pattern, replacement);
-  }
-  return out;
+  return redactSecrets(text).text;
 }
 
 export interface TeeOptions {
@@ -105,4 +89,4 @@ export class TeeWriter {
 }
 
 // Export internals for testing.
-export const _internal = { redact, SECRET_PATTERNS };
+export const _internal = { redact };
