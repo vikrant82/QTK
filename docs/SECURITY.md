@@ -107,8 +107,9 @@ and validates the resulting path is inside `cwd`.
 QTK applies a shared deterministic redaction pass at the final text boundary
 before writing compressed or pass-through output back into opencode's mutable
 tool result. This covers normal `{ output }` tools and MCP text/resource
-content shapes. Redacted output is wrapped with `<qtk-redacted count=N>` so the
-model can see that redaction happened without seeing the secret values.
+content shapes. Redacted output is wrapped with
+`<qtk-redacted count=N categories=[...]>` so the model can see that redaction
+happened, and roughly why, without seeing the secret values.
 For assignment-like text, QTK preserves the key/identifier and replaces only
 the value with `[REDACTED_SECRET_VALUE]` where possible, so source-code fixtures
 remain structurally readable.
@@ -155,6 +156,10 @@ is exposed to the model or written to disk.
 
 This is best-effort — we don't try to be a DLP solution. But the obvious
 cases shouldn't be in model context or on disk in plaintext.
+
+Redaction-only pass-through output intentionally does not include a raw tee
+path: writing unredacted secrets to disk would defeat the safety goal. For exact
+local Bash output, rerun the command with `QTK_DISABLED=1 <command>`.
 
 Patterns scanned:
 

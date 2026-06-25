@@ -140,7 +140,8 @@ describe("opencode tool hook compatibility", () => {
       processContext(),
     );
 
-    expect(output.output).toContain("<qtk-redacted count=1>");
+    expect(output.output).toContain("<qtk-redacted count=1");
+    expect(output.output).toContain('categories=["aws-key"]');
     expect(output.output).toContain("[REDACTED_SECRET_VALUE]");
     expect(output.output).not.toContain(secret);
     expect(output.output).not.toContain("<qtk-compressed");
@@ -167,7 +168,8 @@ describe("opencode tool hook compatibility", () => {
       },
     );
 
-    expect(output.output).toContain("<qtk-redacted count=1>");
+    expect(output.output).toContain("<qtk-redacted count=1");
+    expect(output.output).toContain('categories=["github-token"]');
     expect(output.output).toContain("<qtk-compressed compressor=secret-summary");
     expect(output.output).toContain("summary token=[REDACTED_SECRET_VALUE]");
     expect(output.output).not.toContain(secret);
@@ -187,7 +189,8 @@ describe("opencode tool hook compatibility", () => {
       },
     );
 
-    expect(output.content[0]!.text).toContain("<qtk-redacted count=1>");
+    expect(output.content[0]!.text).toContain("<qtk-redacted count=1");
+    expect(output.content[0]!.text).toContain('categories=["ai-provider-key"]');
     expect(output.content[0]!.text).toContain("[REDACTED_SECRET_VALUE]");
     expect(output.content[0]!.text).not.toContain(secret);
   });
