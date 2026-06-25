@@ -327,6 +327,17 @@ async function processCall(
     return;
   }
   const raw = target.text;
+  const args = extractHookArgs(input, output);
+  if (hasPerCallQtkDisabled(input, args)) {
+    ctx.logger.debug("passthrough", {
+      ...logFields(input, args),
+      shape: target.shape,
+      reason: "qtk_disabled_env",
+      bytes: formatBytes(raw.length),
+      tok: estimateTokens(raw),
+    });
+    return;
+  }
   if (raw.length < ctx.config.compression.minInputBytes) {
     const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
     if (redacted) {
@@ -336,8 +347,6 @@ async function processCall(
     }
     return; // small outputs are not worth compressing, but may need redaction
   }
-
-  const args = extractHookArgs(input, output);
 
   // Compute fingerprint and output hash
   const fp = ctx.cache.fingerprint(input.tool, args);
@@ -782,6 +791,27 @@ function extractCommandHead(
     return commandHead(args.command);
   }
   return tool.toLowerCase();
+}
+
+function hasPerCallQtkDisabled(
+  input: HookInput,
+  args: Record<string, unknown>,
+): boolean {
+  if (input.tool.toLowerCase() !== "bash") return false;
+  const command = typeof args.command === "string" ? args.command.trim() : "";
+  if (!command) return false;
+  const env = readLeadingEnvAssignments(command);
+  return isTruthyEnv(env.QTK_DISABLED);
+}
+
+function readLeadingEnvAssignments(command: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const token of command.split(/\s+/)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) break;
+    const eq = token.indexOf("=");
+    env[token.slice(0, eq)] = token.slice(eq + 1).replace(/^['"]|['"]$/g, "");
+  }
+  return env;
 }
 
 function extractHookArgs(

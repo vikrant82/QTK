@@ -141,7 +141,7 @@ describe("opencode tool hook compatibility", () => {
     );
 
     expect(output.output).toContain("<qtk-redacted count=1>");
-    expect(output.output).toContain("[REDACTED]");
+    expect(output.output).toContain("[REDACTED_SECRET_VALUE]");
     expect(output.output).not.toContain(secret);
     expect(output.output).not.toContain("<qtk-compressed");
   });
@@ -169,7 +169,7 @@ describe("opencode tool hook compatibility", () => {
 
     expect(output.output).toContain("<qtk-redacted count=1>");
     expect(output.output).toContain("<qtk-compressed compressor=secret-summary");
-    expect(output.output).toContain("summary [REDACTED]");
+    expect(output.output).toContain("summary token=[REDACTED_SECRET_VALUE]");
     expect(output.output).not.toContain(secret);
   });
 
@@ -188,7 +188,7 @@ describe("opencode tool hook compatibility", () => {
     );
 
     expect(output.content[0]!.text).toContain("<qtk-redacted count=1>");
-    expect(output.content[0]!.text).toContain("[REDACTED]");
+    expect(output.content[0]!.text).toContain("[REDACTED_SECRET_VALUE]");
     expect(output.content[0]!.text).not.toContain(secret);
   });
 
@@ -200,6 +200,24 @@ describe("opencode tool hook compatibility", () => {
       { tool: "bash", sessionID: "session-test", callID: "call-test" },
       output,
       { ...processContext(), redactionEnabled: false },
+    );
+
+    expect(output.output).toBe(`AWS key leaked by a tool: ${secret}`);
+  });
+
+  test("honors per-call QTK_DISABLED bash env before redaction", async () => {
+    const secret = "AKIAIOSFODNN7EXAMPLE";
+    const output = { output: `AWS key leaked by a tool: ${secret}` };
+
+    await _internal.processCall(
+      {
+        tool: "bash",
+        sessionID: "session-test",
+        callID: "call-test",
+        args: { command: "QTK_DISABLED=1 cat test_routes_handlers.py" },
+      },
+      output,
+      processContext(),
     );
 
     expect(output.output).toBe(`AWS key leaked by a tool: ${secret}`);
