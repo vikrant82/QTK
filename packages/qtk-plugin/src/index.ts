@@ -820,7 +820,10 @@ function pathToRelative(abs: string, root: string): string {
   return abs;
 }
 
-export const _internal = { extractHookArgs, processCall };
+export const _internal = Object.assign(QtkPlugin, {
+  extractHookArgs,
+  processCall,
+});
 
 // Default export for opencode plugin loader convention
 export default QtkPlugin;
