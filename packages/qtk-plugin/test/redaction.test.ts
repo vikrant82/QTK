@@ -4,7 +4,7 @@ import { redactModelText, redactSecrets } from "../src/redaction.ts";
 describe("model-facing secret redaction", () => {
   test("redacts AWS keys", () => {
     const result = redactSecrets("AKIAIOSFODNN7EXAMPLE");
-    expect(result.text).toBe("[REDACTED]");
+    expect(result.text).toBe("[REDACTED_SECRET_VALUE]");
     expect(result.count).toBe(1);
   });
 
@@ -61,7 +61,7 @@ after`;
 
     expect(result.count).toBe(1);
     expect(result.text).toContain("<qtk-redacted count=1>");
-    expect(result.text).toContain("[REDACTED]");
+    expect(result.text).toContain("[REDACTED_SECRET_VALUE]");
     expect(result.text).toContain("</qtk-redacted>");
   });
 
@@ -98,5 +98,33 @@ after`;
     expect(result.count).toBe(2);
     expect(result.text).not.toContain("Basic dXNl");
     expect(result.text).not.toContain("abcdefghijklmnopqrstuvwxyz1234567890");
+  });
+
+  test("preserves source identifiers while redacting fixture literal values", () => {
+    const input = `mock_request.state.launchpad_auth = LaunchpadAuthContext(
+    bearer_token="launchpad-token",
+    account_id="acct_12345",
+)`;
+
+    const result = redactSecrets(input);
+
+    expect(result.count).toBe(1);
+    expect(result.text).toContain("mock_request.state.launchpad_auth");
+    expect(result.text).toContain("LaunchpadAuthContext");
+    expect(result.text).toContain('bearer_token="[REDACTED_SECRET_VALUE]"');
+    expect(result.text).toContain('account_id="acct_12345"');
+    expect(result.text).not.toContain("launchpad-token");
+  });
+
+  test("does not redact code identifier assignments", () => {
+    const input = [
+      "launchpad_auth = LaunchpadAuthContext",
+      "auth_provider = request.state.launchpad_auth",
+    ].join("\n");
+
+    const result = redactSecrets(input);
+
+    expect(result.count).toBe(0);
+    expect(result.text).toBe(input);
   });
 });
