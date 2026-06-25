@@ -177,7 +177,7 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
     if (!config.sidecar.enabled) {
       console.log("[qtk] sidecar disabled via .opencode/qtk.toml");
     } else {
-      const binPath = await locateQtkCore(projectRoot);
+      const binPath = config.sidecar.path ?? (await locateQtkCore(projectRoot));
       if (binPath) {
         const client = new SidecarClient({
           binaryPath: binPath,
@@ -820,7 +820,10 @@ function pathToRelative(abs: string, root: string): string {
   return abs;
 }
 
-export const _internal = { extractHookArgs, processCall };
+export const _internal = Object.assign(QtkPlugin, {
+  extractHookArgs,
+  processCall,
+});
 
 // Default export for opencode plugin loader convention
 export default QtkPlugin;

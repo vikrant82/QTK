@@ -87,6 +87,8 @@ export interface QtkConfig {
 
   readonly sidecar: {
     readonly enabled: boolean;
+    /** Optional configured qtk-core binary path. */
+    readonly path: string | null;
     readonly requestTimeoutMs: number;
     readonly startupTimeoutMs: number;
     readonly maxRestarts: number;
