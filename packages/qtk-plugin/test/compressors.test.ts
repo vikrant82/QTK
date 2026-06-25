@@ -471,7 +471,29 @@ describe("generic-text compressor", () => {
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("text outline:");
     expect(out).toContain("lead:");
+    expect(out).toContain("## Section 0 @L1-L4");
+    expect(out).toContain("## Section 1 @L5-L8");
+    expect(out).toContain("Long prose for section 0");
+    expect(out).toContain("@L2");
+    expect(out).toContain("- bullet 0A with details @L3");
+  });
+
+  test("can disable markdown line references", () => {
+    const sections: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      sections.push(`## Section ${i}`);
+      sections.push(`Long prose for section ${i} `.repeat(12));
+      sections.push(`- bullet ${i}A with details`);
+      sections.push(`- bullet ${i}B with details`);
+    }
+    const input = sections.join("\n");
+    const out = genericTextCompressor.compress(input, {
+      ...CTX,
+      config: { markdown_line_refs: false },
+    });
+    expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("## Section 0");
+    expect(out).not.toContain("@L");
   });
 
   test("preserves notable unique lines in repeated logs", () => {

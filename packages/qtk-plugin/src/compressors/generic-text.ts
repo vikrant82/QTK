@@ -5,7 +5,7 @@
 
 import { basename, dirname } from "node:path/posix";
 import type { Compressor, CompressorContext } from "../types.ts";
-import { intOption, numberOption, stringArrayOption } from "../options.ts";
+import { boolOption, intOption, numberOption, stringArrayOption } from "../options.ts";
 const EXCLUDED_TOOLS = new Set([
   "apply_patch",
   "edit",
@@ -222,15 +222,20 @@ function compressMarkdown(raw: string, config: Record<string, unknown>): string 
   if (lines.length < minLines) return null;
 
   const out: string[] = ["text outline:"];
-  const visible = stripMarkdownCodeBlocks(lines).map((line) => line.trim());
-  const headings = visible.filter((line) => /^#{1,4}\s+/.test(line));
+  const visible = stripMarkdownCodeBlocks(lines).map((line) => ({
+    lineNo: line.lineNo,
+    text: line.text.trim(),
+  }));
+  const headings = visible.filter((line) => /^#{1,4}\s+/.test(line.text));
+  const lineRefs = boolOption(config, "markdown_line_refs", true);
+  const sectionRanges = boolOption(config, "markdown_section_ranges", true);
   const maxBullets = intOption(config, "markdown_max_bullets", 20, {
     min: 0,
     max: 500,
   });
-  const bullets = visible.filter((line) => /^[-*+]\s+\S/.test(line)).slice(0, maxBullets);
+  const bullets = visible.filter((line) => /^[-*+]\s+\S/.test(line.text)).slice(0, maxBullets);
   const prose = visible
-    .filter((line) => line && !/^#{1,4}\s+/.test(line) && !/^[-*+]\s+\S/.test(line))
+    .filter((line) => line.text && !/^#{1,4}\s+/.test(line.text) && !/^[-*+]\s+\S/.test(line.text))
     .slice(0, intOption(config, "markdown_max_lead_lines", 8, { min: 0, max: 100 }));
 
   if (headings.length === 0 && bullets.length < 10) return null;
@@ -238,15 +243,18 @@ function compressMarkdown(raw: string, config: Record<string, unknown>): string 
     min: 1,
     max: 500,
   });
-  for (const heading of headings.slice(0, maxHeadings)) out.push(trim(heading));
+  const headingRanges = sectionRanges ? markdownSectionRanges(headings, lines.length) : new Map<number, LineRange>();
+  for (const heading of headings.slice(0, maxHeadings)) {
+    out.push(markdownOutlineLine(heading, lineRefs ? headingRanges.get(heading.lineNo) : undefined));
+  }
   if (headings.length > maxHeadings) out.push(`... +${headings.length - maxHeadings} more headings`);
   if (prose.length > 0) {
     out.push("lead:");
-    for (const line of prose) out.push(`  ${trim(line)}`);
+    for (const line of prose) out.push(`  ${markdownOutlineLine(line, lineRefs ? lineRange(line.lineNo) : undefined)}`);
   }
   if (bullets.length > 0) {
     out.push("bullets:");
-    for (const bullet of bullets) out.push(`  ${trim(bullet)}`);
+    for (const bullet of bullets) out.push(`  ${markdownOutlineLine(bullet, lineRefs ? lineRange(bullet.lineNo) : undefined)}`);
   }
   out.push(`(${lines.length} original lines)`);
   return shorter(raw, out.join("\n"));
@@ -299,17 +307,50 @@ function looksLikePath(value: string): boolean {
   return /^(?:\.?\.?\/|~\/|[A-Za-z]:\\|[A-Za-z0-9_@.+-]+\/)[^\s]+$/.test(value);
 }
 
-function stripMarkdownCodeBlocks(lines: readonly string[]): string[] {
-  const out: string[] = [];
+type NumberedLine = { readonly lineNo: number; readonly text: string };
+type LineRange = { readonly start: number; readonly end: number };
+
+function stripMarkdownCodeBlocks(lines: readonly string[]): NumberedLine[] {
+  const out: NumberedLine[] = [];
   let inFence = false;
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     if (/^\s*```/.test(line)) {
       inFence = !inFence;
       continue;
     }
-    if (!inFence) out.push(line);
+    if (!inFence) out.push({ lineNo: index + 1, text: line });
   }
   return out;
+}
+
+function markdownSectionRanges(
+  headings: readonly NumberedLine[],
+  totalLines: number,
+): Map<number, LineRange> {
+  const ranges = new Map<number, LineRange>();
+  for (const [index, heading] of headings.entries()) {
+    const level = markdownHeadingLevel(heading.text);
+    const nextPeer = headings.slice(index + 1).find((next) => markdownHeadingLevel(next.text) <= level);
+    ranges.set(heading.lineNo, lineRange(heading.lineNo, (nextPeer?.lineNo ?? totalLines + 1) - 1));
+  }
+  return ranges;
+}
+
+function markdownHeadingLevel(line: string): number {
+  return line.match(/^(#{1,4})\s+/)?.[1]?.length ?? 5;
+}
+
+function markdownOutlineLine(line: NumberedLine, range?: LineRange): string {
+  const suffix = range ? ` @${formatLineRange(range)}` : "";
+  return `${trim(line.text)}${suffix}`;
+}
+
+function lineRange(start: number, end = start): LineRange {
+  return { start, end: Math.max(start, end) };
+}
+
+function formatLineRange(range: LineRange): string {
+  return range.start === range.end ? `L${range.start}` : `L${range.start}-L${range.end}`;
 }
 
 function isNotableLine(line: string): boolean {
