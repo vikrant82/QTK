@@ -130,6 +130,23 @@ describe("opencode tool hook compatibility", () => {
     ]);
   });
 
+  test("hard-exempts Serena bootstrap tools from redaction and compression", async () => {
+    const raw = `${"important onboarding line\n".repeat(80)}AKIAIOSFODNN7EXAMPLE\n`;
+    for (const tool of ["serena_initial_instructions", "serena_onboarding"]) {
+      const logs: string[] = [];
+      const output = { output: raw };
+
+      await _internal.processCall(
+        { tool, sessionID: "session-test", callID: "call-test" },
+        output,
+        processContext(logs),
+      );
+
+      expect(output.output).toBe(raw);
+      expect(logs).toContainEqual(expect.stringContaining("reason=tool_exempt"));
+    }
+  });
+
   test("redacts small pass-through output before the model sees it", async () => {
     const secret = "AKIAIOSFODNN7EXAMPLE";
     const output = { output: `AWS key leaked by a tool: ${secret}` };
