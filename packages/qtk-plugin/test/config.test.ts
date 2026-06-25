@@ -52,6 +52,8 @@ enabled = false
 
 [qtk.sidecar]
 enabled = false
+path = "~/bin/qtk-core"
+request_timeout_ms = 99
 
 [qtk.filters]
 disabled = ["project:noisy", "dsl:bundled:helm"]
@@ -71,7 +73,8 @@ enabled = false
       expect(config.rewrite.enabled).toBe(false);
       expect(config.redaction.enabled).toBe(false);
       expect(config.sidecar.enabled).toBe(false);
-      expect(config.sidecar.requestTimeoutMs).toBe(1000);
+      expect(config.sidecar.path).toContain("/bin/qtk-core");
+      expect(config.sidecar.requestTimeoutMs).toBe(99);
       expect(config.filters.disabled).toEqual([
         "project:noisy",
         "dsl:bundled:helm",
@@ -102,6 +105,7 @@ min_input_bytes = 123
 
 [qtk.sidecar]
 enabled = false
+path = "/tmp/global-qtk-core"
 request_timeout_ms = 77
 
 [qtk.compressors.rg]
@@ -116,6 +120,7 @@ log_level = "info"
 
 [qtk.sidecar]
 enabled = true
+path = ".opencode/plugin/qtk-core"
 
 [qtk.compressors.rg]
 max_matches_per_file = 2
@@ -127,6 +132,7 @@ max_matches_per_file = 2
       expect(config.logLevel).toBe("info");
       expect(config.compression.minInputBytes).toBe(123);
       expect(config.sidecar.enabled).toBe(true);
+      expect(config.sidecar.path).toBe(join(root, ".opencode/plugin/qtk-core"));
       expect(config.sidecar.requestTimeoutMs).toBe(77);
       expect(config.compressors.rg).toEqual({
         max_files_shown: 4,
@@ -155,6 +161,9 @@ max_matches_per_file = 2
       const config = await loadConfig(root);
 
       expect(config.compression.minInputBytes).toBe(200);
+      expect(config.sidecar.path).toBe(
+        "/Users/chauv/vibe-tools/QTK/packages/qtk-core/target/release/qtk-core",
+      );
       expect(config.sidecar.requestTimeoutMs).toBe(1000);
       expect(config.compressors["git-status"]?.max_files_per_section).toBe(15);
       expect(config.compressors["generic-text"]?.disabled_shapes).toEqual([]);

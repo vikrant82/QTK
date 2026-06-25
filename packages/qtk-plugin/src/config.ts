@@ -21,6 +21,7 @@ export const DEFAULT_CONFIG: QtkConfig = {
   },
   sidecar: {
     enabled: true,
+    path: null,
     requestTimeoutMs: 1000,
     startupTimeoutMs: 1500,
     maxRestarts: 3,
@@ -80,7 +81,7 @@ export async function loadConfig(projectRoot: string): Promise<QtkConfig> {
     try {
       const text = await f.text();
       const parsed = parseToml(text);
-      config = mergeConfig(config, parsed);
+      config = mergeConfig(projectRoot, config, parsed);
     } catch (e) {
       console.warn(`[qtk] config load failed for ${path}:`, e);
     }
@@ -227,6 +228,7 @@ function splitArrayItems(inner: string): string[] {
 }
 
 function mergeConfig(
+  projectRoot: string,
   base: QtkConfig,
   override: Record<string, unknown>,
 ): QtkConfig {
@@ -275,6 +277,8 @@ function mergeConfig(
       enabled:
         (sidecarOverride.enabled as boolean | undefined) ??
         base.sidecar.enabled,
+      path:
+        readOptionalPath(projectRoot, sidecarOverride.path) ?? base.sidecar.path,
       requestTimeoutMs:
         (sidecarOverride.request_timeout_ms as number | undefined) ??
         base.sidecar.requestTimeoutMs,
@@ -326,6 +330,24 @@ function readStringArray(value: unknown): readonly string[] | undefined {
   return value.filter(
     (item): item is string => typeof item === "string" && item.trim() !== "",
   );
+}
+
+function readOptionalPath(
+  projectRoot: string,
+  value: unknown,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const expanded = expandHome(value.trim());
+  if (isAbsolute(expanded)) return expanded;
+  return resolve(projectRoot, expanded);
+}
+
+function expandHome(value: string): string {
+  if (value === "~") return homedir();
+  if (value.startsWith("~/")) return join(homedir(), value.slice(2));
+  return value;
 }
 
 function mergeOptionTables(
