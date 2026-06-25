@@ -109,6 +109,9 @@ before writing compressed or pass-through output back into opencode's mutable
 tool result. This covers normal `{ output }` tools and MCP text/resource
 content shapes. Redacted output is wrapped with `<qtk-redacted count=N>` so the
 model can see that redaction happened without seeing the secret values.
+For assignment-like text, QTK preserves the key/identifier and replaces only
+the value with `[REDACTED_SECRET_VALUE]` where possible, so source-code fixtures
+remain structurally readable.
 
 ---
 
@@ -161,7 +164,7 @@ Patterns scanned:
 - AI provider keys (`sk-...`, `sk-ant-...`, Google `AIza...`)
 - Slack, Stripe, npm, PyPI, Docker Hub, GitLab, SendGrid, Datadog, and Sentry token shapes
 - JWTs, bearer tokens, connection strings, and private key blocks/headers
-- Common `password|secret|token|key|credential|auth|private|access_key` assignments, with false-positive guards for fields such as `author`, `authority`, and `tokenizer`
+- Common `password|secret|token|key|credential|auth|private|access_key` assignments, preserving the assignment name and redacting only the value where possible, with false-positive guards for fields such as `author`, `authority`, `tokenizer`, and identifier-valued source-code assignments
 
 ---
 

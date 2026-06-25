@@ -860,7 +860,7 @@ describe("Tee secret redaction", () => {
     const input = "AWS_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE found in env";
     const out = teeInternal.redact(input);
     expect(out).not.toContain("AKIAIOSFODNN7EXAMPLE");
-    expect(out).toContain("[REDACTED]");
+    expect(out).toContain("[REDACTED_SECRET_VALUE]");
   });
 
   test("redacts GitHub PATs", () => {
@@ -872,7 +872,7 @@ describe("Tee secret redaction", () => {
   test("redacts Bearer tokens", () => {
     const input = "Authorization: Bearer sk-veryverysecret";
     const out = teeInternal.redact(input);
-    expect(out).toContain("[REDACTED]");
+    expect(out).toContain("[REDACTED_SECRET_VALUE]");
     expect(out).not.toContain("veryverysecret");
   });
 

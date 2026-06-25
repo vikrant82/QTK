@@ -37,9 +37,11 @@ describe("QTK debug logger", () => {
 
     logger.debug("rewrite", { cmd: `git status ${secret}` });
 
-    expect(logs[0]).toContain("[REDACTED]");
+    expect(logs[0]).toContain("[REDACTED_SECRET_VALUE]");
     expect(logs[0]).not.toContain(secret);
-    expect(sanitizeLogLabel(`git status ${secret}`)).toBe("git status [REDACTED]");
+    expect(sanitizeLogLabel(`git status ${secret}`)).toBe(
+      "git status [REDACTED_SECRET_VALUE]",
+    );
   });
 
   test("formats sizes and savings", () => {
