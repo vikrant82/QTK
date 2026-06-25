@@ -49,6 +49,17 @@ const SECRET_PATTERNS_SOURCE: readonly string[] = [
 
 const COMPILED_SECRET_RE = new RegExp(SECRET_PATTERNS_SOURCE.join("|"), "gi");
 
+const CATEGORY_PATTERNS: readonly [category: string, pattern: RegExp][] = [
+  ["private-key", /PRIVATE KEY/i],
+  ["aws-key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ["github-token", /\b(?:gh[pousr]_|github_pat_)/i],
+  ["ai-provider-key", /\b(?:sk-ant-|sk-(?:proj-)?|AIza)/],
+  ["saas-token", /\b(?:sk_live_|rk_live_|xox[baprs]-|SG\.|glpat-|npm_|pypi-|dckr_pat_)/i],
+  ["bearer-token", /(?:Authorization\s*:\s*)?Bearer\s+/i],
+  ["jwt", /\beyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\./],
+  ["connection-string", /\b(?:mongodb|postgres|mysql|redis):\/\//i],
+];
+
 const ASSIGNMENT_RE = new RegExp(
   `(^|[^.\\w-])(${SENSITIVE_ASSIGNMENT_NAME})(\\s*[=:]\\s*)(?:\"([^\"\\n]*)\"|'([^'\\n]*)'|([^\\s,\\]})]+))`,
   "gim",
@@ -57,14 +68,17 @@ const ASSIGNMENT_RE = new RegExp(
 export interface RedactionResult {
   readonly text: string;
   readonly count: number;
+  readonly categories: readonly string[];
 }
 
 export function redactSecrets(text: string): RedactionResult {
   let count = 0;
+  const categories = new Set<string>();
 
   COMPILED_SECRET_RE.lastIndex = 0;
-  const knownSecretRedacted = text.replace(COMPILED_SECRET_RE, () => {
+  const knownSecretRedacted = text.replace(COMPILED_SECRET_RE, (match) => {
     count++;
+    categories.add(categoryForSecret(match));
     return REDACTED_SECRET_VALUE;
   });
 
@@ -76,20 +90,32 @@ export function redactSecrets(text: string): RedactionResult {
       const quote = doubleQuoted !== undefined ? '"' : singleQuoted !== undefined ? "'" : "";
       if (!shouldRedactAssignmentValue(value, quote)) return match;
       count++;
+      categories.add(quote ? "secret-literal" : "secret-assignment");
       return `${prefix}${name}${separator}${quote}${REDACTED_SECRET_VALUE}${quote}`;
     },
   );
 
-  return { text: assignmentRedacted, count };
+  return { text: assignmentRedacted, count, categories: [...categories].sort() };
 }
 
 export function redactModelText(text: string): RedactionResult {
   const redacted = redactSecrets(text);
   if (redacted.count === 0) return redacted;
+  const categoryAttr = redacted.categories.length > 0
+    ? ` categories=${JSON.stringify(redacted.categories)}`
+    : "";
   return {
-    text: `<qtk-redacted count=${redacted.count}>\n${redacted.text}\n</qtk-redacted>`,
+    text: `<qtk-redacted count=${redacted.count}${categoryAttr}>\n${redacted.text}\n</qtk-redacted>`,
     count: redacted.count,
+    categories: redacted.categories,
   };
+}
+
+function categoryForSecret(value: string): string {
+  for (const [category, pattern] of CATEGORY_PATTERNS) {
+    if (pattern.test(value)) return category;
+  }
+  return "secret-value";
 }
 
 function shouldRedactAssignmentValue(value: string, quote: string): boolean {
