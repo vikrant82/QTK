@@ -50,12 +50,15 @@ fallback.
 Before mutating any model-facing text, QTK also redacts common secrets such as
 AWS keys, GitHub PATs, AI provider keys, bearer tokens, private keys, and
 secret-like environment/config assignments. The same redaction pass protects
-tee files written for exact-output recovery.
+tee files written for exact-output recovery. Assignment-like redactions preserve
+the key/identifier and replace only the value with `[REDACTED_SECRET_VALUE]`
+where possible.
 
 It also has a conservative `tool.execute.before` hook for Bash-only quiet
 rewrites such as `pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`, and Gradle `--quiet --console=plain`.
-Set `QTK_REWRITE_DISABLED=1` to disable only those rewrites, or
-`QTK_DISABLED=1` to disable the plugin.
+Set `QTK_REWRITE_DISABLED=1` to disable only those rewrites, or put
+`QTK_DISABLED=1` on an individual Bash command to bypass QTK for that exact tool
+call.
 
 For live diagnostics, set `[qtk] log_level = "debug"` in `.opencode/qtk.toml`
 or launch with `QTK_DEBUG=1`. Debug logs show per-call sizes, token estimates,
