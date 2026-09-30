@@ -1,5 +1,8 @@
 # QTK vs RTK — A Detailed Comparison
 
+> QTK's supported host contract is OpenCode V1 only. This comparison is
+> architectural background, not a parity certification or live-session report.
+
 > **Read this first:** [RTK](https://github.com/rtk-ai/rtk) is the mature,
 > production-grade project. 65k+ GitHub stars, 200+ releases, supports 14
 > AI coding tools across Linux/macOS/Windows, and ships 100+ supported
@@ -7,7 +10,7 @@
 > works at scale. Built by Patrick Szymkowiak, Florian Bruniaux, Adrien
 > Eppling, and the RTK community. Licensed Apache-2.0.
 >
-> **If you're not running opencode specifically, you almost certainly want
+> **If you're not running OpenCode V1 specifically, you almost certainly want
 > RTK, not QTK.** RTK supports Claude Code, Cursor, Gemini CLI, GitHub
 > Copilot, Codex, Windsurf, Cline, Roo Code, OpenCode, OpenClaw, Pi, Hermes,
 > Kilo Code, Antigravity — basically every serious AI coding agent.
@@ -29,22 +32,22 @@
 | -------------------------------- | --------------------------------------------- | ------------------------------------------ |
 | Form factor                      | External Rust binary (~8 MB)                  | TypeScript plugin file                     |
 | Lines of code                    | ~50,000 Rust + 100+ supported commands        | Target Phase 1: ~3,000 TS                  |
-| Installation                     | `cargo install`, `brew install`, `install.sh` | Symlink a file into `.opencode/plugin/`    |
-| Process model                    | Spawn per call (forks `rtk rewrite`)          | In-process, no subprocess                  |
-| Tool scope                       | Bash command rewriting                        | opencode tools with string `output`; MCP observed but pass-through today |
-| Compression timing               | Before tool call (rewrites command)           | After tool call (rewrites output)          |
+| Installation                     | `cargo install`, `brew install`, `install.sh` | npm/dist for package users; direct source entry for local contributors |
+| Process model                    | External binary | Plugin process; helper subprocess when RTK resolves |
+| Tool scope                       | Bash command rewriting                        | OpenCode V1 Bash routing via external RTK helper; after-hook handles native tools/MCP text |
+| Compression timing               | Before tool call (rewrites command)           | RTK-first before Bash; QTK after-hook processes outputs |
 | Prompt overhead                  | ~hundreds of tokens of CLAUDE.md hint         | Zero                                       |
-| Per-call latency                 | 5–15 ms                                       | 1–4 ms                                     |
+| Per-call latency                 | External process overhead                     | In-process output path; helper cost when RTK resolves |
 | Cross-call dedup                 | None                                          | Session cache                              |
-| Compaction integration           | None                                          | Plugs into opencode's pruner (Phase 5)     |
-| Filter authoring                 | Upstream PR to rtk-ai/rtk                     | Per-project `.opencode/qtk/filters/*.toml` |
-| Telemetry                        | Opt-in HTTP POST to operator's endpoint       | Strictly local SQLite                      |
+| Compaction integration           | None                                          | None; Phase 5 proposal is historical roadmap context |
+| Filter authoring                 | Upstream PR to rtk-ai/rtk                     | Project-local filters plus bundled RTK-compatible filters |
+| Telemetry                        | Opt-in HTTP POST to operator's endpoint       | Global local SQLite by default; project-attributed |
 | Tee perms                        | 0o644 (umask default — world-readable!)       | 0o600 explicit                             |
 | Telemetry kill switch            | Runtime + env var                             | Not applicable (no network code exists)    |
 | Coverage of `Read`/`Grep`/`Glob` | Zero                                          | Full                                       |
 | Built-in test runners            | jest/vitest/pytest/cargo/go/playwright        | Active: pytest/cargo; planned: jest/vitest/playwright/go |
 | Standalone CLI                   | Yes (`rtk`)                                   | Only `qtk gain` (optional analytics)       |
-| Cross-agent support              | 14+ agents                                    | opencode plugin surface only               |
+| Cross-agent support              | 14+ agents                                    | OpenCode V1 plugin surface only             |
 
 ---
 
@@ -52,36 +55,35 @@
 
 ### 1. Where the work happens
 
-**RTK rewrites the command** before it runs:
+**When used through QTK's helper, RTK can rewrite the command** before it runs:
 
 ```
 LLM → "git status"
-hook → "rtk git status"
+QTK → invokes external `rtk rewrite`; allowed rewrite → "rtk git status"
 shell → runs rtk binary
 rtk → calls git, parses output, prints compact form
 ```
 
-**QTK rewrites the output** after the command runs:
+**QTK coordinates command routing and output processing**:
 
 ```
 LLM → "git status"
-shell → runs git
-opencode → captures result.output (raw porcelain)
-QTK hook → compresses result.output
+QTK before-hook → external `rtk rewrite` when RTK resolves (default allow all)
+shell → runs original or rewritten command
+OpenCode V1 → captures output; QTK after-hook compresses eligible results
 LLM ← compact form
 ```
 
 This single architectural flip cascades into most of the wins. Concretely:
 
-- **No prompt injection.** RTK has to install a CLAUDE.md hint so the model
-  knows `rtk` exists (or else the model would refuse the rewritten command).
-  QTK is invisible to the model — the model writes `git status` and sees
-  compact output, never learning QTK exists.
+- **No QTK prompt injection.** The model need not be taught to call QTK.
+  RTK-first rewrites can appear in OpenCode V1 tool history and agents may
+  imitate the rewritten `rtk …` command.
 
-- **Double-wrap safety.** If the model has learned (from previous projects)
-  to write `rtk git status` proactively, RTK's hook turns this into
-  `rtk rtk git status` unless it has guard logic. QTK never has this
-  problem — we don't touch the command.
+- **Permission and history caveat.** OpenCode V1 checks permissions against
+  rewritten commands and retains rewritten input in history, so permission
+  rules may need `rtk …` variants and agents may imitate the rewritten form.
+  QTK normalizes denied/unallowed proxy commands but leaves RTK-native commands.
 
 - **Read/Grep/Glob support.** RTK's hook is on `tool.execute.before` for the
   bash tool only. opencode's built-in `Read`/`Grep`/`Glob` tools never see
@@ -94,26 +96,17 @@ This single architectural flip cascades into most of the wins. Concretely:
   §2.1). These are intentional shell wrappers, but they widen RTK's attack
   surface meaningfully — if an attacker can influence the model's command
   output, they can chain into shell execution via these meta-commands. QTK
-  never executes anything. The bash tool runs the command (just like
-  before); QTK reads the result.
+  does not execute the agent's requested command itself; it invokes the
+  external RTK rewrite helper and the Bash tool executes the resulting command.
 
 ### 2. Process model
 
-**RTK forks a subprocess on every bash tool call.** Look at the opencode
-plugin shipped at `hooks/opencode/rtk.ts`:
+When RTK resolves, QTK invokes its helper subprocess for Bash rewriting;
+otherwise its output path is in-process TypeScript, with optional qtk-core
+sidecar parsing. The latency figures below are historical measurements, not a
+current-host or live-session guarantee.
 
-```ts
-const result = await $`rtk rewrite ${command}`.quiet().nothrow();
-```
-
-That's a `fork() + exec() + IPC roundtrip` per call. On modern Linux, that's
-~5 ms minimum, more like 10–15 ms in practice with binary loading.
-
-**QTK runs in-process.** Compressors are pure TypeScript functions called
-synchronously. The overhead is the regex engine and a SQLite insert.
-Measured ~1–4 ms in microbenchmarks.
-
-This matters for two reasons:
+Historically, this process-model distinction mattered for these reasons:
 
 - **Long sessions add up.** A 4-hour yolo session can easily make 500+ tool
   calls. RTK adds 2.5–7.5 seconds of fork overhead; QTK adds 0.5–2 seconds.
@@ -160,24 +153,20 @@ On a real agent session, this catches the "list files → make edit → list
 files again" pattern hundreds of times. Each hit saves the full compressed
 output's tokens.
 
-State also unlocks Phase 5: smart compaction. opencode already has a
-compaction system that nulls old tool outputs when context fills up. With
-QTK's stats DB, we can replace nulling with summarising — instead of
-"[output pruned]", the model sees "4 prior `git status` calls, no new
-changes since 14:18".
+An earlier Phase 5 roadmap proposed smart compaction, but QTK does not
+currently integrate with OpenCode's pruner or replace its output handling.
 
 ---
 
 ## Things RTK does that QTK deliberately doesn't
 
-### Hook-based command rewriting
+### General-purpose command rewriting
 
-QTK doesn't rewrite commands. We compress outputs. This is a deliberate
-architectural choice (see §1 above), not a missing feature.
+QTK has narrow pre-call routing: external RTK rewrite first, then approved
+whitelist-only quiet-flag fallback. It is not a general-purpose shell proxy.
 
-If you want command rewriting, install RTK alongside QTK. They compose:
-RTK rewrites the command, the rewritten command runs, QTK compresses the
-result (no-op if RTK already compressed it to a tiny form).
+QTK invokes RTK as a helper when installed; do not install RTK's OpenCode
+plugin alongside it. The QTK after-hook avoids double-compressing RTK results.
 
 ### Standalone CLI
 
@@ -189,22 +178,20 @@ If you want compact git output in your own terminal, use RTK.
 
 ### Cross-agent support (Cursor, Gemini, Windsurf, Cline, etc.)
 
-RTK supports 13 agents because it's a CLI proxy with hook adapters.
+RTK supports many agents because it's a CLI proxy with hook adapters.
 
-QTK targets exactly one surface: the opencode plugin API. If you want
-similar functionality in Cursor or Gemini, use RTK or write a separate
-adapter. Don't ask QTK to be RTK.
+QTK targets exactly one surface: OpenCode V1's plugin API. Fork and V2
+compatibility are not claimed. For other agents, use RTK or another adapter.
 
 ### `rtk discover` / `rtk gain` / `rtk session` analytics CLI
 
 RTK has a rich CLI for inspecting savings. QTK has one analytics command,
-`qtk gain`, that prints session totals and is intentionally minimal.
+`qtk gain`, which reports a tokens-first global QTK funnel, recall proxy
+counts, and optional USD. RTK totals are separately scoped; recall indicators
+do not establish causal recovery.
 
-The intended QTK analytics surface is the **gmux dashboard widget**
-(Phase 4) — a live counter in your terminal multiplexer pane showing the
-running token-savings number, with a drill-down inspector. That's where we
-think analytics belong: in the agent UX, not in a separate CLI you have to
-remember to run.
+The gmux dashboard widget and drill-down inspector described here are roadmap
+ideas from an earlier plan, not a claim about current live integration.
 
 ### Cryptographic device hashing / salted IDs for telemetry
 
@@ -267,10 +254,10 @@ of it. QTK compresses all three:
 
 Already covered in §3 above. RTK has no equivalent.
 
-### Compaction integration (Phase 5)
+### Historical compaction proposal (not implemented)
 
-RTK is stateless and has no knowledge of opencode's compaction system. QTK
-plugs into it and replaces "[output pruned]" with summaries.
+RTK is stateless and has no knowledge of OpenCode's compaction system. QTK's
+old roadmap proposal to replace pruned output with summaries is not implemented.
 
 ### Zero prompt injection
 
@@ -288,9 +275,10 @@ exist in QTK because we never call out.
 
 ## Compatibility matrix
 
-Can RTK and QTK both be installed in the same opencode project?
+Can RTK and QTK be used together in an OpenCode V1 project?
 
-**Yes, and they compose cleanly.**
+**Yes.** Install QTK as the sole OpenCode plugin and use RTK as its external
+helper; do not install RTK's OpenCode plugin alongside QTK.
 
 | Scenario                                            | RTK behaviour                                      | QTK behaviour                                     | Net result                |
 | --------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------- | ------------------------- |
@@ -304,7 +292,7 @@ Can RTK and QTK both be installed in the same opencode project?
 | Model writes some exotic `npm run my-custom-script` | No rule, passthrough                               | No rule, passthrough                              | Original (no compression) |
 | Two RTK invocations in a row (caching)              | Each is independent fork                           | Session cache catches identical output            | RTK + QTK dedup           |
 
-So installing both gives you: RTK's mature filter corpus + QTK's coverage
+Using RTK as QTK's helper gives you: RTK's mature filter corpus + QTK's coverage
 of the tools RTK can't touch + QTK's session dedup over both.
 
 ---
@@ -314,13 +302,13 @@ of the tools RTK can't touch + QTK's session dedup over both.
 | You want...                                                              | Use                                     |
 | ------------------------------------------------------------------------ | --------------------------------------- |
 | Token compression in Claude Code, Cursor, Gemini, etc.                   | RTK                                     |
-| Token compression in opencode specifically, with maximum coverage        | QTK (+ optionally RTK)                  |
+| Token compression in OpenCode V1, with maximum coverage                  | QTK (RTK helper optional)                |
 | One unified install across many agents                                   | RTK                                     |
 | Zero prompt overhead                                                     | QTK                                     |
 | Best-in-class compression of `git`, `cargo test`, `kubectl`, `terraform` | RTK (much more mature filter corpus)    |
 | Coverage of `Read`/`Grep`/`Glob` output                                  | QTK (RTK can't reach these)             |
-| Live dashboard integration with gmux/tauri                               | QTK (Phase 4)                           |
-| Smart compaction in opencode sessions                                    | QTK (Phase 5)                           |
+| Live dashboard integration with gmux/tauri                               | Not established by this comparison      |
+| Smart compaction in OpenCode sessions                                    | Not currently implemented               |
 | No network code at all in your supply chain                              | QTK                                     |
 | To not have to think about it                                            | RTK on everything else, QTK on opencode |
 

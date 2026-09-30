@@ -1,16 +1,146 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../src/config.ts";
+import { DEFAULT_CONFIG, loadConfig } from "../src/config.ts";
+
+const oldStatsPath = process.env.QTK_STATS_PATH;
+afterAll(() => {
+  if (oldStatsPath === undefined) delete process.env.QTK_STATS_PATH;
+  else process.env.QTK_STATS_PATH = oldStatsPath;
+});
 
 describe("config loader", () => {
+  test("stats path precedence is env, config absolute/relative, then XDG default", async () => {
+    const root = mkdtemp();
+    const xdg = mkdtemp();
+    const configHome = mkdtemp();
+    const oldXdgData = process.env.XDG_DATA_HOME;
+    const oldXdgConfig = process.env.XDG_CONFIG_HOME;
+    try {
+      process.env.XDG_DATA_HOME = xdg;
+      process.env.XDG_CONFIG_HOME = configHome;
+      delete process.env.QTK_STATS_PATH;
+      expect((await loadConfig(root)).stats.database).toBe(join(xdg, "qtk", "stats.sqlite"));
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(join(root, ".opencode", "qtk.toml"), '[qtk.stats]\npath = "stats/custom.sqlite"\n');
+      expect((await loadConfig(root)).stats.database).toBe(join(root, "stats/custom.sqlite"));
+      writeFileSync(join(root, ".opencode", "qtk.toml"), '[qtk.stats]\npath = "/tmp/qtk-config.sqlite"\n');
+      expect((await loadConfig(root)).stats.database).toBe("/tmp/qtk-config.sqlite");
+      process.env.QTK_STATS_PATH = "/tmp/qtk-env.sqlite";
+      expect((await loadConfig(root)).stats.database).toBe("/tmp/qtk-env.sqlite");
+    } finally {
+      if (oldXdgData === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = oldXdgData;
+      if (oldXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = oldXdgConfig;
+      rmSync(root, { recursive: true, force: true });
+      rmSync(xdg, { recursive: true, force: true });
+      rmSync(configHome, { recursive: true, force: true });
+    }
+  });
+
   test("enables bundled and project filters by default", async () => {
     const root = mkdtemp();
     try {
       const config = await loadConfig(root);
       expect(config.filters.bundled).toBe(true);
       expect(config.filters.project).toBe(true);
+      expect(config.rtk).toEqual(DEFAULT_CONFIG.rtk);
+      expect(config.rtk.allow).toEqual(["*"]);
+      expect(config.rtk.deny).toEqual([]);
+      expect(config.compression.minSavingsRatio).toBe(0.1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("parses and bounds RTK rewrite configuration", async () => {
+    const root = mkdtemp();
+    try {
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(
+        join(root, ".opencode", "qtk.toml"),
+        '[qtk.rtk]\nenabled = false\nbinary = "/tmp/rtk"\nrewrite_timeout_ms = 20000\nallow = ["  git   diff ", "*"]\n',
+      );
+
+      const config = await loadConfig(root);
+
+      expect(config.rtk).toEqual({
+        enabled: false,
+        binary: "/tmp/rtk",
+        rewriteTimeoutMs: 10000,
+        allow: ["git diff", "*"],
+        deny: [],
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("clamps RTK rewrite timeout to its minimum", async () => {
+    const root = mkdtemp();
+    try {
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(
+        join(root, ".opencode", "qtk.toml"),
+        "[qtk.rtk]\nrewrite_timeout_ms = 1\n",
+      );
+      const config = await loadConfig(root);
+      expect(config.rtk.rewriteTimeoutMs).toBe(50);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("parses and normalizes RTK allow prefixes", async () => {
+    const root = mkdtemp();
+    try {
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(
+        join(root, ".opencode", "qtk.toml"),
+        '[qtk.rtk]\nallow = ["  git   diff ", "*"]\n',
+      );
+      expect((await loadConfig(root)).rtk.allow).toEqual(["git diff", "*"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("parses normalized RTK deny prefixes", async () => {
+    const root = mkdtemp();
+    try {
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(join(root, ".opencode", "qtk.toml"), '[qtk.rtk]\ndeny = [" rg  foo ", "git push"]\n');
+      expect((await loadConfig(root)).rtk.deny).toEqual(["rg foo", "git push"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("parses and bounds the minimum final-text savings ratio", async () => {
+    const root = mkdtemp();
+    try {
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(
+        join(root, ".opencode", "qtk.toml"),
+        "[qtk.compression]\nmin_savings_ratio = 1.5\n",
+      );
+      expect((await loadConfig(root)).compression.minSavingsRatio).toBe(0.9);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("clamps the minimum final-text savings ratio to zero", async () => {
+    const root = mkdtemp();
+    try {
+      mkdirSync(join(root, ".opencode"), { recursive: true });
+      writeFileSync(
+        join(root, ".opencode", "qtk.toml"),
+        "[qtk.compression]\nmin_savings_ratio = -0.5\n",
+      );
+      expect((await loadConfig(root)).compression.minSavingsRatio).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -161,9 +291,8 @@ max_matches_per_file = 2
       const config = await loadConfig(root);
 
       expect(config.compression.minInputBytes).toBe(200);
-      expect(config.sidecar.path).toBe(
-        "/Users/chauv/vibe-tools/QTK/packages/qtk-core/target/release/qtk-core",
-      );
+      expect(config.sidecar.enabled).toBe(true);
+      expect(config.sidecar.path).toBeNull();
       expect(config.sidecar.requestTimeoutMs).toBe(1000);
       expect(config.compressors["git-status"]?.max_files_per_section).toBe(15);
       expect(config.compressors["generic-text"]?.disabled_shapes).toEqual([]);

@@ -134,12 +134,10 @@ export function estimateUsdSaved(
 }
 
 /**
- * Format a USD amount for display. < $1 → cents with 2 decimals; up to
- * $999 → 2 decimals; above → whole dollars.
+ * Format a USD amount for display without implying precision below one cent.
  */
 export function formatUsd(usd: number): string {
-  if (usd < 0.01) return `$${(usd * 100).toFixed(2)}¢`;
-  if (usd < 1) return `$${usd.toFixed(2)}`;
+  if (usd < 0.01) return "<$0.01";
   if (usd < 1000) return `$${usd.toFixed(2)}`;
   return `$${Math.round(usd).toLocaleString()}`;
 }

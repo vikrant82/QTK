@@ -80,7 +80,9 @@ describe("pricing — estimateUsdSaved", () => {
 
 describe("pricing — formatUsd", () => {
   test("sub-cent formatting", () => {
-    expect(formatUsd(0.0001)).toMatch(/¢/);
+    expect(formatUsd(0.0001)).toBe("<$0.01");
+    expect(formatUsd(0.0099)).toBe("<$0.01");
+    expect(formatUsd(1.23)).toBe("$1.23");
   });
   test("dollar formatting", () => {
     expect(formatUsd(4.92)).toBe("$4.92");

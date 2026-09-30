@@ -2,7 +2,7 @@
 
 > Also a backronym for **Q**uantised **T**oken **K**iller — same idea, more descriptive.
 
-**Deterministic token compression for opencode-based AI coding agents.**
+**Deterministic token compression for OpenCode V1.**
 
 > ## Read this first
 >
@@ -17,78 +17,49 @@
 > Codex, Windsurf, Cline, Roo Code, OpenCode, OpenClaw, Pi, Hermes,
 > Kilo Code, or Google Antigravity — use [RTK](https://rtk-ai.app).**
 >
-> **QTK is a narrow opencode-specific spiritual sibling.** It exists
-> because opencode's plugin surface lets us hook `tool.execute.after`
-> in-process, which removes the per-call subprocess fork and the
-> system-prompt overhead any external-CLI tool necessarily carries.
+> **QTK is a narrow OpenCode V1-specific spiritual sibling.** It exists
+> because OpenCode V1's plugin surface lets us hook `tool.execute.after`
+> in-process for output handling, while RTK remains an optional external helper
+> for Bash rewrites.
 > That trade-off only makes sense if you're already committed to
-> opencode. The whole project is downstream of RTK — RTK proved the
+> OpenCode V1. The whole project is downstream of RTK — RTK proved the
 > thesis, ships the canonical filter corpus, and is broader and more
 > battle-tested. See [`docs/RTK-COMPARISON.md`](docs/RTK-COMPARISON.md)
 > for the architectural diff.
 
-QTK is an [opencode](https://github.com/sst/opencode) plugin that silently
+QTK is an [OpenCode V1](https://github.com/anomalyco/opencode) plugin that silently
 compresses matching tool outputs (`git status`, `ls -la`, `rg`, `pytest`,
 `cargo test`, `Read`/`Grep`/`Glob`, and optional sidecar-handled outputs such
 as `kubectl get -o yaml`, `terraform plan`, and JUnit XML) **before they reach
-the model's context window**. No LLM. No prompt injection. ~99% reduction on
-the worst offenders, sub-millisecond p99 latency, zero changes to how you use
-opencode.
+the model's context window**. No LLM or prompt injection. RTK-first Bash
+rewriting can change command input/history; see the permission caveat below.
 
 <!-- TODO: insert a screenshot of the qtk gain output once we have a real session -->
 
 ```
-[qtk] sidecar: qtk-core binary not found; using TS-only
-[qtk] active — 12 compressors registered
-[qtk] compressors: tool-read, tool-grep, tool-glob, git-status, git-log, ls, find, rg, package-manager, pytest, cargo, generic-text
+Illustrative current-format report (fabricated values; not measured):
+QTK · last 7 days · all projects (1) · 1 session
+Tool output seen    100 calls · 64.0k tok
+  compressed         20 calls · 40.0k → 32.0k tok   saved 8.0k (12.5% of all tool output)
+  handled by RTK       5 calls · 2.0k tok out
+  recovery calls       0 calls · 0 tok
+  passed through     75 calls · 22.0k tok
+    no compressor 12 · kept exact 63
+Recalls             QTK 1 of 20 compressions (tee reads 1 · bypass reruns 0) · RTK 0 of 5 RTK calls
+RTK totals          8 runs · saved 2.0k (20.0%) · RTK's own count, all time, all projects
 
-# If qtk-core is installed, QTK also enables 4 async sidecar compressors:
-# sidecar:terraform-plan, sidecar:kubectl-structured,
-# sidecar:cargo-json, sidecar:junit-xml
-
-$ qtk gain
-────────────────────────────────────────────────────────────────
-QTK savings
-────────────────────────────────────────────────────────────────
-Window:           last 7 days
-Pricing model:    claude-sonnet-4-5  (input $3.00/1M, output $15.00/1M)
-Sessions:         12
-Calls compressed: 4872 (903 cache hits)
-Bytes:            5.1M → 1.3M (74.9% saved)
-Tokens (est):     1.3M → 322k (978k saved)
-Cost saved (est): $2.93
-
-By compressor:
-  name              calls    bytes-in   bytes-out  tok-saved   USD-saved  avg-ratio
-  tool-read           283       1.2M       312k       217k      $0.65     26.5%
-  sidecar:kubectl-st   34       421k        94k        82k      $0.25     22.3%
-  git-status          147       294k        58k        59k      $0.18     19.7%
-  ...
-
-By tool:
-  bash                314       1.0M       312k       172k      $0.52     31.0%
-  read                283       1.2M       312k       217k      $0.65     26.5%
-  task                 18       210k        89k        30k      $0.09     42.3%
-
-By source:
-  builtin             402       1.5M       420k       270k      $0.81     28.0%
-  tool                501       1.8M       510k       320k      $0.96     28.3%
-  generic              18       210k        89k        30k      $0.09     42.3%
-
-By result shape:
-  output             4854       5.0M       1.2M       955k      $2.86     25.0%
-  mcp_text_content     18       210k        89k        30k      $0.09     42.3%
-
-Top 10 commands by tokens saved:
-  command                            calls  tok-saved   USD-saved  avg-ratio
-  read /path/to/...                    283       217k      $0.65     26.5%
-  git status                           147        59k      $0.18     19.7%
-  ...
-
-────────────────────────────────────────────────────────────────
-Extrapolated:     ~140k tokens/day · $0.42/day
-                  $12.55/month · $152.69/year at current rate
+By compressor                        calls   tok in → out   saved   recall
+  git-status                            12     30.0k → 24.0k   6.0k     8.3%
+  tool-grep                              8     10.0k → 8.0k    2.0k     0.0%
+# USD appears only when `--usd` is supplied.
 ```
+
+Startup logging is omitted from this report illustration. Sidecar compressors
+are available only when the optional binary is installed.
+
+When the calls table is unavailable, `qtk gain --json` reports the
+compression-only history under `legacy_compressions`; it omits the funnel and
+does not invent a call denominator or reason groups. `--db PATH` is read-only.
 
 [![CI](https://github.com/qalarc/QTK/actions/workflows/ci.yml/badge.svg)](https://github.com/qalarc/QTK/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@qalarc/qtk-plugin?label=%40qalarc%2Fqtk-plugin)](https://www.npmjs.com/package/@qalarc/qtk-plugin)
@@ -117,34 +88,33 @@ hand-written parsers reduce these outputs by 60–99% with zero quality loss
 for the model.
 
 [RTK](https://github.com/rtk-ai/rtk) proved the thesis at scale with
-100+ supported commands. QTK is the in-agent version of the same idea:
+100+ supported commands. QTK is the in-host version of the same idea:
 
 | | RTK | QTK |
 |---|---|---|
-| **Where it lives** | External CLI binary | opencode plugin (in-process) |
-| **Hook surface** | Shell command wrapping | opencode `tool.execute.after` for model-executed tools |
-| **Default compressors** | Bash command filters | Bash command outputs + `Read`/`Grep`/`Glob`; MCP text results can now be mutated safely, with generic MCP compressors planned next |
-| **Integration cost** | Hundreds of tokens in CLAUDE.md so the model knows to call `rtk <cmd>` | Zero — the model is unaware QTK exists |
-| **Per-call overhead** | Subprocess fork per bash invocation (5–15 ms) | In-process TS (median 30µs) |
+| **Where it lives** | External CLI binary | OpenCode V1 plugin, optionally using external RTK helper |
+| **Hook surface** | Shell command wrapping | V1 before-hook routes Bash through RTK when present; after-hook processes outputs |
+| **Default compressors** | Bash command filters | Bash outputs + `Read`/`Grep`/`Glob` and MCP text results |
+| **Integration cost** | RTK command hint in agent instructions | No QTK prompt injection; RTK-first rewrites may appear in command history |
+| **Per-call overhead** | Subprocess per invocation | In-process TS output path; RTK helper subprocess for Bash when enabled |
 | **Heavy parsers** | Same Rust binary as everything | Optional `qtk-core` sidecar, fires only for XML/YAML/JSON |
 | **Cross-call dedup** | None | Session cache: `<qtk-unchanged tool=bash since=14s_ago>` |
 | **User filters** | PR upstream | `.opencode/qtk/filters/*.toml`, hot-reloaded |
 | **Telemetry** | Opt-in, phones home | 100% local SQLite, zero network code |
 
-RTK is the right answer for everyone running an agent that isn't opencode.
-**QTK is the right answer if you use opencode** (or qalcode2, or any
-opencode-compatible fork).
+RTK is the right answer for agents other than OpenCode V1. QTK targets the
+OpenCode V1 plugin API; compatibility with forks is not claimed.
 
 ---
 
 ## Show me the numbers
 
 ```
-QTK benchmark suite (200 iters per case)
+Historical local microbenchmark (200 iterations per case; not live-session or current-host validation)
 
 name                                            in     out   saved      p50      p90      p99
 ---------------------------------------------------------------------------------------------------
-git status (real opencode-fork output)         939     542   42.3%     17µs     31µs    110µs
+git status (recorded OpenCode tool output)      939     542   42.3%     17µs     31µs    110µs
 git status (synthetic large, 100 files)       4.4k    1.3k   70.8%     55µs     93µs    178µs
 rg (50 matches across 10 files)               3.6k    2.3k   36.6%     37µs     58µs    261µs
 Read tool (500-line file)                    16.4k     206   98.7%    221µs    343µs   1.11ms
@@ -153,7 +123,7 @@ Glob (45 paths in 3 clusters)                 1.3k     360   73.1%     32µs    
 ```
 
 ```
-qtk-core sidecar benchmark (Rust, NDJSON pipe)
+Historical qtk-core sidecar benchmark (Rust, NDJSON pipe; not current-host validation)
 
 Cold start (spawn → hello → first compress): 2.4 ms ✅ (target ≤ 30 ms)
 
@@ -174,11 +144,12 @@ Throughput (concurrent batches of 50):
 
 ## What QTK does, in 60 seconds
 
-1. **opencode** prepares a model-executed tool call. QTK's optional
-   `tool.execute.before` hook applies only whitelist-safe Bash rewrites such as
-   `pytest -q`, `cargo --quiet`, `npm install --silent`, or Gradle `--quiet --console=plain`; verbosity/debug
-   flags opt out.
-2. **opencode** runs the tool (e.g. `Bash("git status")`) and gets raw output back.
+1. **OpenCode V1** prepares a model-executed tool call. For Bash, QTK invokes
+   the external RTK helper first when it resolves; RTK suggestions are accepted
+   by default. If RTK declines or is absent, QTK applies whitelist-safe quiet
+   rewrites; verbosity/debug flags opt out.
+2. **OpenCode V1** runs the tool; RTK may already have rewritten the command
+   and compressed its output.
 3. The `tool.execute.after` hook fires. QTK can inspect and rewrite normal
    opencode `output` strings and MCP text-content results before opencode
    flattens them for the model.
@@ -186,12 +157,16 @@ Throughput (concurrent batches of 50):
    - First: 4 optional async **sidecar compressors** (terraform plan, kubectl YAML/JSON, cargo JSON, JUnit XML) — these route to the Rust `qtk-core` subprocess. If the sidecar isn't available, they pass through.
    - Then: any **DSL filter** in `.opencode/qtk/filters/*.toml` matching the command.
    - Then: the **11 specific registered TS compressors** (`git-status`, `git-log`, `ls`, `find`, `rg`, `package-manager`, `pytest`, `cargo`, `Read`, `Grep`, `Glob`).
-   - Last: `generic-text`, a conservative lossy fallback for recognizable MCP/task text shapes (path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs). Generic compression requires a raw tee file and is marked `lossy=true`.
-5. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in `<qtk-compressed compressor=git-status orig_lines=42 ratio=0.18 tee=qtk-tee/abc123.log>...</qtk-compressed>`.
-6. The model sees the compact output. The raw output is saved to a tee file with mode `0o600` for forensic recovery if needed.
-7. Every compression is logged to a per-project SQLite DB; `bun run qtk-plugin/src/cli/gain.ts` prints session totals.
+   - Last: `generic-text`, a lossless-by-default fallback for `task` and MCP tools with `_` in the name. It compacts valid JSON objects/arrays by removing whitespace outside strings, preserving values, number formatting, and key order; it applies only when at least `json_compact_min_saved_bytes` bytes are saved (default 256). Other output passes through unchanged. The result is marked `lossless=true` and has no tee because nothing needs recovery. Set `[qtk.compressors.generic_text] allow_lossy = true` to opt into the previous lossy summaries; those results are marked `lossy=true` and require a tee (otherwise they pass through unchanged).
+5. The compressor runs (median ≪ 1 ms). Output is replaced with a compact form wrapped in a `<qtk-compressed ...>` envelope. Tee-backed compressions include a tee path; lossless results carry `lossless=true` and no tee.
+6. For tee-backed compressions, recoverable output is saved to a tee file with mode `0o600`; contents follow `[qtk.redaction] enabled`.
+7. Every processed after-hook call is recorded in a global SQLite database by default, attributed to project. `qtk gain` reports a tokens-first QTK funnel, with USD only when requested; RTK statistics have a separate scope. QTK tee reads and same-session `QTK_DISABLED=1` reruns are recall proxies, not proof that a particular compression caused a read. Tee reads pass through uncompressed; redaction follows `[qtk.redaction] enabled`.
 
-**The model never knows QTK exists.** No CLAUDE.md injection. No special tool wrappers. Pre-call command rewriting is whitelist-only and can be disabled with `QTK_REWRITE_DISABLED=1` or globally with `QTK_DISABLED=1`.
+**The model need not be taught about QTK.** No prompt injection. RTK-first Bash
+rewriting changes command input/history, however, and OpenCode V1 permissions
+are evaluated against the rewritten command; configure permission rules
+accordingly. QTK quiet rewrites can be disabled with `QTK_REWRITE_DISABLED=1`
+or globally with `QTK_DISABLED=1`.
 
 ---
 
@@ -232,6 +207,43 @@ Pipeline: `pass_through_if → strip → dedupe → match → group_by → templ
 
 Also ships `scripts/import-rtk-filters.ts` to translate a local `git clone rtk-ai/rtk` into QTK format (strips RTK-only keys, adds attribution headers, validates against QTK's spec).
 
+### Using QTK with RTK (hybrid)
+
+QTK invokes RTK's `rtk rewrite` from its Bash before-hook when RTK is installed.
+RTK suggestions are honored by default; QTK's Bash compressors remain the
+fallback when RTK declines or is absent. Rewrites apply per shell segment:
+allowed segments use RTK's result, denied segments keep the original, and
+segment-count changes use the all-or-nothing policy. Agent-typed denied
+`rtk <proxy>` commands are normalized before rewrite; RTK-native commands such
+as `rtk read` and `rtk recall` are never stripped.
+
+```toml
+[qtk.rtk]
+enabled = true              # auto-active only when the binary resolves
+binary = "rtk"              # PATH name or absolute executable path
+rewrite_timeout_ms = 1000   # bounded to 50–10000 ms
+allow = ["*"]               # RTK owns all rewrites by default
+deny = []                   # command prefixes QTK keeps for itself
+```
+
+`allow` and `deny` are token-prefix lists evaluated per command segment;
+`deny` takes precedence. The default honors every rewrite RTK suggests. Add
+families such as `"rg"` or `"git diff"` to `deny` when QTK should keep them.
+RTK itself declines unsafe redirects, pipes into programs, and `--json`; QTK
+honors those declines. RTK recall/proxy, `RTK_DISABLED=1`, and RTK tee-file
+references are classified separately. QTK tee reads and bypass reruns are
+recall proxies, not proof that a particular compression caused a read.
+
+RTK ≥0.45 works; 0.49+ is recommended for SQLite recall and safer pipeline
+rewriting. Do not install RTK's OpenCode plugin alongside QTK. **Permission
+caveat:** OpenCode checks permissions against the rewritten `rtk …` command;
+OpenCode V1 also persists that rewritten input in tool history, which agents
+may imitate. A rule such as `"git push *": "ask"` will no longer match. Put commands
+that must retain their permission gate in RTK `[hooks] exclude_commands`, or
+add equivalent `"rtk git push *"` OpenCode rules. An RTK rewrite exit code 2
+leaves the original command unchanged; QTK does not enforce RTK/Claude Code
+deny decisions, and OpenCode permissions govern whether the command executes.
+
 ### Phase 3: Rust sidecar `qtk-core`
 
 For heavy parsers where Rust's streaming parsers beat anything you'd write in JS:
@@ -253,12 +265,12 @@ NDJSON protocol over stdin/stdout (one JSON object per line). Long-lived subproc
 
 - **No network code anywhere.** The Rust crate has no HTTP deps. The TS plugin has no HTTP deps. We literally cannot phone home.
 - **Tee files are mode `0o600`, directory `0o700`.** Path-confined to the project root.
-- **Secrets-aware redaction** on model-facing output and tee files: AWS access keys, GitHub PATs, OpenAI/Anthropic keys (`sk-...`), Slack tokens (`xoxb-...`), private keys, common secret assignments, and `Bearer ...` headers are redacted before model mutation or disk write.
+- **Secrets-aware redaction** on model-facing output and tee files follows `[qtk.redaction] enabled`: when enabled, common secrets are redacted before model mutation and disk write; when disabled, neither output is redacted.
 - **`unsafe_code = "deny"`** in the Rust crate.
 - **Circuit breaker:** any compressor that throws 3× in a session is automatically disabled for the rest of the session.
 - **Length-monotonicity guard:** if a compressor ever produces output ≥ its input, the original is returned. Compression should never make things worse.
 - **Compressor panic in Rust is caught** (`catch_unwind`) — turns into an error response, doesn't kill the sidecar.
-- **Config paths are project-rooted** — env-var overrides are deliberately NOT honoured (lesson from RTK's audit).
+- **Configured relative paths are project-rooted** — relative stats paths remain confined to the project; absolute `QTK_STATS_PATH` is the deliberate stats-only override.
 
 ---
 
@@ -325,7 +337,10 @@ After install, check `[qtk] active — N compressors registered` in opencode's s
 
 ---
 
-## gmux integration — live savings on your status bar
+## Savings export format (dashboard consumer example)
+
+This is the plugin's JSON export shape, not a claim that a live dashboard
+integration or final-session measurement has been verified.
 
 QTK writes a small JSON sidecar at `<project>/.opencode/qtk-savings.json`
 every 10 seconds. The file looks like:
@@ -361,8 +376,8 @@ per-pane and per-session QTK savings:
 Multiple gmux panes pointing at the same opencode instance are deduped
 by port so you don't double-count.
 
-Any other dashboard can read the same sidecar file. Format is stable
-(`schema: 1`); see `packages/qtk-plugin/src/savings-export.ts` for the
+Any other dashboard can read the same sidecar file. The current exporter
+version is `schema: 2`; see `packages/qtk-plugin/src/savings-export.ts` for the
 schema definition.
 
 ---
@@ -372,9 +387,9 @@ schema definition.
 ```bash
 bun run packages/qtk-plugin/src/cli/gain.ts
 
-# Output:
+# Historical human-readable report sample (not current CLI output):
 # Session b1c2d3 (3h 14m):
-#   1,247 calls compressed
+#   1,247 compression records
 #   originally 4,512,309 bytes / 1,128,077 tokens
 #   compressed  1,289,432 bytes /   322,358 tokens
 #   tokens saved:     805,719 (-71.4%)
@@ -384,9 +399,25 @@ bun run packages/qtk-plugin/src/cli/gain.ts
 #   git-status                   147   294k     58k   234k saved (-79%)
 #   sidecar:kubectl-structured    34   421k     94k   327k saved (-77%)
 #   ...
+# Example recall display only; recall counts are attribution proxies.
 ```
 
-Or query the SQLite DB directly at `.opencode/qtk-stats.sqlite`.
+When a calls table exists, the report includes a tokens-first funnel; USD is
+opt-in and RTK totals are separately scoped. Recall counts are attribution
+proxies, not proof that a particular compression caused recovery. For a legacy
+compression-only database, JSON reports `legacy_compressions`; it omits the
+funnel and does not invent call denominators or reason groups. `--db PATH`
+reads the selected database without migrating or modifying it.
+
+In legacy human-readable mode the CLI labels these data “Legacy compressions”;
+the sample above is not a rendering of that legacy output.
+
+Stats are stored in the global `${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite`
+database by default. Set absolute `QTK_STATS_PATH` to override it, or use
+`[qtk.stats] path` (absolute as-is, relative to and confined within the project).
+`retention_days` defaults to 90; `0` keeps rows forever. The `calls` table
+records every processed after-hook call and outcome; `compressions` retains
+compression/cache-hit detail.
 
 For live debugging, set `[qtk] log_level = "debug"` in `.opencode/qtk.toml`
 or launch opencode with `QTK_DEBUG=1`. QTK logs compact per-call lines such as
@@ -395,7 +426,11 @@ process log; raw tool output is not logged.
 
 See `docs/examples/qtk.toml` for the complete currently honored runtime config,
 including global config (`~/.config/qtk/qtk.toml`), project overrides, disabling
-Bash rewrites/sidecar/filters/lossy `generic-text`, and per-compressor caps.
+Bash rewrites/sidecar/filters, opt-in lossy `generic-text` (`allow_lossy`), and
+per-compressor caps. `[qtk.compression] min_savings_ratio` defaults to `0.10`
+(bounded to `0`–`0.9`): QTK compares estimated tokens for the complete
+model-facing envelope against the raw output and passes through raw text when
+the configured saving is not reached.
 
 ---
 
@@ -407,7 +442,7 @@ opencode process
       ├─ tool.execute.after hook
       ├─ Session cache (SHA-256 fingerprint, output-hash equality)
       │     → "<qtk-unchanged tool=bash since=14s_ago>"
-      ├─ Async sidecar compressors (Phase 3)
+       ├─ Async sidecar compressors
       │     ├─ matches() → bash command pattern
       │     └─ compress() → NDJSON over stdin/stdout to qtk-core
       │           ↓
@@ -417,15 +452,15 @@ opencode process
       │       ├─ kubectl-yaml   (line-pruner)
       │       ├─ kubectl-json   (serde_json)
       │       └─ cargo-json     (NDJSON serde_json)
-      ├─ DSL filters (Phase 2)
+       ├─ DSL filters
       │     ├─ Loaded from .opencode/qtk/filters/*.toml
       │     ├─ Hot-reloaded on file change (250ms debounce)
       │     └─ Pipeline: strip → dedupe → match → group_by → template → truncate
-      ├─ Built-in TS compressors (Phase 1)
+       ├─ Built-in TS compressors
       │     git-status, git-log, ls, find, rg, package-manager, pytest, cargo,
       │     tool-read, tool-grep, tool-glob
       ├─ Tee writer (.opencode/qtk-tee/<call-id>.log, 0o600)
-      ├─ SQLite stats (.opencode/qtk-stats.sqlite)
+       ├─ SQLite stats (~/.local/share/qtk/stats.sqlite by default)
       └─ Circuit breaker (auto-disables flaky compressor after 3 failures)
 ```
 
@@ -493,7 +528,7 @@ Coverage:
 | Phase 1/4 compressors        | 52    | Command/tool/generic compressors, fixtures, adversarial inputs |
 | Session cache                | 3     | Fingerprint stability, hash check, LRU pruning          |
 | Circuit breaker              | 2     | 3-strike disable, per-compressor isolation              |
-| Secret redaction             | 13    | Model-facing + tee redaction, pass-through/compressed/MCP paths, false-positive guards |
+| Secret redaction             | 13    | Model-facing + tee redaction follow `[qtk.redaction] enabled`, pass-through/compressed/MCP paths, false-positive guards |
 | Phase 2 TOML DSL             | 39    | Parser, spec validator, runtime, loader, end-to-end     |
 | Phase 3 Rust parsers         | 22    | All 4 parsers, malformed input, length-monotonicity     |
 | Phase 3 sidecar integration  | 10    | Real binary spawn, hello, concurrent ids, stop/restart  |

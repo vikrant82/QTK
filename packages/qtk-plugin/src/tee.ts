@@ -1,12 +1,13 @@
-// Tee fallback writer. On compression, write raw output to disk so the
-// agent can recover it via `cat .opencode/qtk-tee/<id>.log` if needed.
+// Tee fallback writer. On compression, write the output to disk so the agent
+// can recover it via `cat .opencode/qtk-tee/<id>.log` if needed. Redaction
+// follows the configured [qtk.redaction] enabled setting.
 //
 // Security:
 //   - Files written 0o600 EXPLICITLY (don't trust umask — RTK audit §3.1)
 //   - Directory created 0o700
 //   - Path is constrained to the project root by config loader; we
 //     additionally verify here (defence in depth)
-//   - Secrets-aware redaction before write (best-effort)
+//   - Secrets-aware redaction before write when enabled (best-effort)
 
 import { resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
@@ -19,10 +20,12 @@ function redact(text: string): string {
 export interface TeeOptions {
   readonly projectRoot: string;
   readonly teeDir: string; // relative to projectRoot, or absolute (must be inside projectRoot)
+  readonly redact?: boolean;
 }
 
 export class TeeWriter {
   private dir: string;
+  private redactOutput: boolean;
 
   constructor(opts: TeeOptions) {
     const abs = resolve(opts.projectRoot, opts.teeDir);
@@ -33,6 +36,7 @@ export class TeeWriter {
       );
     }
     this.dir = abs;
+    this.redactOutput = opts.redact ?? true;
   }
 
   /**
@@ -50,7 +54,7 @@ export class TeeWriter {
     try {
       await mkdir(this.dir, { recursive: true, mode: 0o700 });
       const path = `${this.dir}/${callID}.log`;
-      const safe = redact(raw);
+      const safe = this.redactOutput ? redact(raw) : raw;
       // Bun.write supports `mode` option for explicit perms.
       await Bun.write(path, safe, { mode: 0o600 });
       return path;

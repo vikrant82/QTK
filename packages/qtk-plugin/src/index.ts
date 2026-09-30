@@ -10,7 +10,8 @@
 // Read docs/ for the full design.
 
 import type { Plugin } from "@opencode-ai/plugin";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { relative, resolve } from "node:path";
 import { CompressorRegistry } from "./registry.ts";
 import { SessionCache } from "./cache.ts";
 import { TeeWriter } from "./tee.ts";
@@ -36,6 +37,16 @@ import { extractResultText, type ResultTextTarget } from "./result-text.ts";
 import { classifyCompressorSource, isGenericCompressor } from "./metrics.ts";
 import { isTruthyEnv, rewriteCommand } from "./rewrite.ts";
 import { redactModelText } from "./redaction.ts";
+import { genericTextAllowsLossy } from "./compressors/generic-text.ts";
+import {
+  isRtkCommand,
+  isRtkRecallCommand,
+  normalizeAgentRtkCommand,
+  referencesRtkTee,
+  resolveRtkBinary,
+  rtkRewrite,
+  applyRtkRewrite,
+} from "./rtk.ts";
 import {
   createQtkLogger,
   formatArrow,
@@ -45,10 +56,20 @@ import {
   type QtkLogger,
 } from "./logger.ts";
 import type { CompressionOutcome, QtkConfig } from "./types.ts";
+import { intOption } from "./options.ts";
 
 const HARD_PASSTHROUGH_TOOLS = new Set([
   "serena_initial_instructions",
   "serena_onboarding",
+]);
+const GENERIC_TEXT_POLICY_EXCLUSIONS = new Set([
+  "apply_patch", "edit", "write", "todowrite", "question", "skill", "permission",
+  "bash", "read", "grep", "glob", "serena_replace_content", "serena_replace_symbol_body",
+  "serena_insert_before_symbol", "serena_insert_after_symbol", "serena_rename_symbol",
+  "serena_write_memory", "serena_edit_memory", "serena_delete_memory", "serena_rename_memory",
+  "serena_list_memories", "serena_read_memory", "serena_initial_instructions", "serena_onboarding",
+  "serena_find_symbol", "serena_find_declaration", "serena_find_implementations",
+  "serena_find_referencing_symbols", "serena_get_symbols_overview", "serena_search_for_pattern",
 ]);
 
 export const QtkPlugin: Plugin = async ({ directory }) => {
@@ -59,6 +80,9 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   }
 
   const config = await loadConfig(projectRoot);
+  const rtkBinary = config.rtk.enabled
+    ? resolveRtkBinary(config.rtk.binary)
+    : null;
   const logger = createQtkLogger({
     logLevel: config.logLevel,
     debugEnv: process.env.QTK_DEBUG,
@@ -151,7 +175,11 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   let tee: TeeWriter | null = null;
   if (config.tee.enabled) {
     try {
-      tee = new TeeWriter({ projectRoot, teeDir: config.tee.directory });
+      tee = new TeeWriter({
+        projectRoot,
+        teeDir: config.tee.directory,
+        redact: config.redaction.enabled,
+      });
       // Prune old tee files from prior sessions (best-effort)
       tee.pruneOlderThan(config.tee.pruneDays).then((n) => {
         if (n > 0) console.log(`[qtk] pruned ${n} stale tee files`);
@@ -163,7 +191,7 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
 
   let stats: StatsTracker | null = null;
   if (config.stats.enabled) {
-    stats = new StatsTracker(projectRoot, config.stats.database);
+    stats = new StatsTracker(projectRoot, config.stats.database, config.stats.retentionDays);
     await stats.init();
   }
 
@@ -227,18 +255,59 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
   return {
     "tool.execute.before": async (input, output) => {
       try {
-        if (
-          isTruthyEnv(process.env.QTK_DISABLED) ||
-          isTruthyEnv(process.env.QTK_REWRITE_DISABLED) ||
-          !config.rewrite.enabled
-        ) {
-          return;
-        }
         if (input.tool.toLowerCase() !== "bash") return;
         if (!isRecord(output.args) || typeof output.args.command !== "string") {
           return;
         }
-        const rewritten = rewriteCommand(output.args.command);
+        const command = output.args.command;
+        const perCallEnv = readLeadingEnvAssignments(command);
+        const normalizedCommand = normalizeAgentRtkCommand(command, config.rtk.allow, config.rtk.deny);
+        if (normalizedCommand !== command) output.args.command = normalizedCommand;
+        if (
+          isTruthyEnv(process.env.QTK_DISABLED) ||
+          isTruthyEnv(process.env.QTK_REWRITE_DISABLED) ||
+          isTruthyEnv(perCallEnv.QTK_DISABLED) ||
+          isTruthyEnv(perCallEnv.QTK_REWRITE_DISABLED)
+        ) {
+          return;
+        }
+        const rtkDisabled = /(?:^|[\s;&|])RTK_DISABLED\s*=/.test(normalizedCommand);
+        if (rtkBinary && !rtkDisabled) {
+          const rtkResult = await rtkRewrite({
+            binary: rtkBinary,
+            command: normalizedCommand,
+            cwd:
+              typeof output.args.workdir === "string"
+                ? resolve(projectRoot, output.args.workdir)
+                : projectRoot,
+            timeoutMs: config.rtk.rewriteTimeoutMs,
+          });
+          if (rtkResult.kind === "rewrite") {
+            const routed = applyRtkRewrite(normalizedCommand, rtkResult.command, config.rtk.allow, config.rtk.deny);
+            if (routed === normalizedCommand) {
+              logger.debug("rtk_not_allowed", {
+                tool: input.tool,
+                cmd: safeCommandLabel(rtkResult.command),
+              });
+            } else {
+              output.args.command = routed;
+              logger.debug("rtk_rewrite", {
+                tool: input.tool,
+                cmd: safeCommandLabel(routed),
+              });
+              return;
+            }
+          }
+          if (rtkResult.kind === "deny") {
+            logger.debug("rtk_deny", {
+              tool: input.tool,
+              cmd: safeCommandLabel(command),
+            });
+            return;
+          }
+        }
+        if (!config.rewrite.enabled) return;
+        const rewritten = rewriteCommand(normalizedCommand);
         if (!rewritten) return;
         const rewrittenCommand = rewritten.command;
         output.args.command = rewrittenCommand;
@@ -254,8 +323,9 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
 
     "tool.execute.after": async (input, output) => {
       // Defensive: never throw out of this hook.
+      const beforeText = extractResultText(output)?.text ?? "";
       try {
-        await processCall(input, output, {
+        const result = await processCall(input, output, {
           projectRoot,
           registry,
           sidecarCompressors,
@@ -270,8 +340,39 @@ export const QtkPlugin: Plugin = async ({ directory }) => {
           redactionEnabled: config.redaction.enabled,
           config,
         });
+        if (result && stats) {
+          const rawTarget = extractResultText(output);
+          const finalText = rawTarget?.text ?? "";
+          const rawBytes = result.rawBytes;
+          const finalBytes = new TextEncoder().encode(finalText).length;
+          stats.logCall({
+            sessionID: input.sessionID,
+            project: projectRoot,
+            tool: input.tool,
+            commandHead: input.tool.toLowerCase() === "bash"
+              ? extractCommandHead(input.tool, extractHookArgs(input, output))
+              : null,
+            outcome: result.outcome,
+            reason: result.reason,
+            bytesIn: rawBytes,
+            bytesOut: finalBytes,
+            tokensInEst: estimateTokens(result.rawText),
+            tokensOutEst: estimateTokens(finalText),
+          });
+        }
       } catch (e) {
         console.warn("[qtk] hook failed (output unchanged):", e);
+        if (stats) {
+          const target = extractResultText(output);
+          const text = target?.text ?? "";
+          stats.logCall({
+            sessionID: input.sessionID, project: projectRoot, tool: input.tool,
+            commandHead: null, outcome: "passthrough", reason: "error",
+            bytesIn: new TextEncoder().encode(beforeText).length,
+            bytesOut: new TextEncoder().encode(text).length,
+            tokensInEst: estimateTokens(beforeText), tokensOutEst: estimateTokens(text),
+          });
+        }
       }
     },
   };
@@ -296,6 +397,13 @@ interface ProcessContext {
   config: QtkConfig;
 }
 
+interface ProcessResult {
+  readonly outcome: "compressed" | "cache_hit" | "passthrough" | "rtk" | "bypass" | "recall";
+  readonly reason: string | null;
+  readonly rawText: string;
+  readonly rawBytes: number;
+}
+
 interface HookInput {
   tool: string;
   sessionID: string;
@@ -314,14 +422,14 @@ async function processCall(
   input: HookInput,
   output: HookOutput,
   ctx: ProcessContext,
-): Promise<void> {
+): Promise<ProcessResult> {
   const target = extractResultText(output);
   if (!target) {
     ctx.logger.debug("passthrough", {
       tool: input.tool,
       reason: "no_text",
     });
-    return;
+    return { outcome: "passthrough", reason: "excluded", rawText: "", rawBytes: 0 };
   }
   if (!target.text) {
     ctx.logger.debug("passthrough", {
@@ -329,9 +437,12 @@ async function processCall(
       shape: target.shape,
       reason: "empty_text",
     });
-    return;
+    return { outcome: "passthrough", reason: "excluded", rawText: target.text, rawBytes: new TextEncoder().encode(target.text).length };
   }
   const raw = target.text;
+  const processResult = (outcome: ProcessResult["outcome"], reason: string | null): ProcessResult => ({
+    outcome, reason, rawText: raw, rawBytes: new TextEncoder().encode(raw).length,
+  });
   const args = extractHookArgs(input, output);
   if (isHardPassthroughTool(input.tool)) {
     ctx.logger.debug("passthrough", {
@@ -341,9 +452,54 @@ async function processCall(
       bytes: formatBytes(raw.length),
       tok: estimateTokens(raw),
     });
-    return;
+    return processResult("passthrough", "excluded");
+  }
+  const isRtkRecall = (input.tool.toLowerCase() === "bash" &&
+    typeof args.command === "string" &&
+    (isRtkRecallCommand(args.command) || /(?:^|[\s;&|])RTK_DISABLED=1(?:\s|$)/.test(args.command))) ||
+    referencesRtkTee(args, process.env.HOME ?? homedir()) ||
+    (input.tool.toLowerCase() === "bash" && typeof args.command === "string" &&
+      referencesRtkTee(args.command, process.env.HOME ?? homedir()));
+  if (isRtkRecall) {
+    return processResult("recall", "rtk");
+  }
+  const recalledTeeFiles = findTeeReferences(args, ctx.projectRoot, ctx.config.tee.directory);
+  if (recalledTeeFiles.length > 0) {
+    for (const teeFile of recalledTeeFiles) ctx.stats?.markTeeRead(teeFile);
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+        reason: "tee_recall",
+      });
+    } else {
+      logPassThrough(ctx.logger, input, args, target.shape, raw, "tee_recall");
+    }
+    return processResult("recall", null);
+  }
+  if (
+    input.tool.toLowerCase() === "bash" &&
+    typeof args.command === "string" &&
+    isRtkCommand(args.command)
+  ) {
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+        reason: "rtk",
+      });
+    } else {
+      logPassThrough(ctx.logger, input, args, target.shape, raw, "rtk");
+    }
+    return processResult("rtk", null);
   }
   if (hasPerCallQtkDisabled(input, args)) {
+    const command = typeof args.command === "string" ? args.command : "";
+    const commandWithoutEnv = stripLeadingEnvAssignments(command);
+    ctx.stats?.markBypassRerun(
+      input.sessionID,
+      input.tool,
+      commandHead(commandWithoutEnv),
+      Date.now() - 15 * 60 * 1000,
+    );
     ctx.logger.debug("passthrough", {
       ...logFields(input, args),
       shape: target.shape,
@@ -351,16 +507,16 @@ async function processCall(
       bytes: formatBytes(raw.length),
       tok: estimateTokens(raw),
     });
-    return;
+    return processResult("bypass", null);
   }
-  if (raw.length < ctx.config.compression.minInputBytes) {
+  if (new TextEncoder().encode(raw).length < ctx.config.compression.minInputBytes) {
     const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
     if (redacted) {
       logRedacted(ctx.logger, input, {}, target.shape, raw, redacted);
     } else {
       logPassThrough(ctx.logger, input, {}, target.shape, raw, "too_small");
     }
-    return; // small outputs are not worth compressing, but may need redaction
+    return processResult("passthrough", "small"); // small outputs are not worth compressing, but may need redaction
   }
 
   // Compute fingerprint and output hash
@@ -429,7 +585,7 @@ async function processCall(
       tee: cacheHit.teeFile ? pathToRelative(cacheHit.teeFile, ctx.projectRoot) : undefined,
       redactions: modelCachedOutput.redactionCount || undefined,
     });
-    return;
+    return processResult("cache_hit", "session-cache");
   }
 
   // First chance: sidecar (async) compressors. These handle heavy parsers
@@ -440,6 +596,7 @@ async function processCall(
   let compressed: string | null = null;
   let compressorName = "";
   let durationMs = 0;
+  let sidecarDeclined = false;
   for (const sc of ctx.sidecarCompressors) {
     if (!sc.matches(input.tool, args)) continue;
     if (ctx.breaker.isDisabled(sc.name)) break;
@@ -448,6 +605,7 @@ async function processCall(
     try {
       candidate = await sc.compress(raw, { args });
     } catch (e) {
+      sidecarDeclined = true;
       const newlyDisabled = ctx.breaker.recordFailure(sc.name);
       if (newlyDisabled) {
         console.warn(
@@ -460,7 +618,7 @@ async function processCall(
     if (candidate !== raw && candidate.length < raw.length) {
       compressed = candidate;
       compressorName = sc.name;
-    }
+    } else sidecarDeclined = true;
     break; // first matching sidecar wins (matches sync registry semantics)
   }
 
@@ -480,7 +638,14 @@ async function processCall(
       } else {
         logPassThrough(ctx.logger, input, args, target.shape, raw, "no_match");
       }
-      return;
+      const toolName = input.tool.toLowerCase();
+      const exactAnswerTools = new Set(["skill", "question", "todowrite", "todoread"]);
+      const excludedTools = new Set(["edit", "write", "apply_patch"]);
+      const genericPolicyExcludes = isGenericTextExcludedTool(toolName);
+      return processResult(
+        "passthrough",
+        sidecarDeclined ? "fail_open" : exactAnswerTools.has(toolName) || genericPolicyExcludes ? "kept_exact" : excludedTools.has(toolName) ? "excluded" : "no_compressor",
+      );
     }
     if (ctx.breaker.isDisabled(compressor.name)) {
       const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
@@ -500,7 +665,12 @@ async function processCall(
           { compressor: compressor.name },
         );
       }
-      return; // circuit-broken: pass through
+      return processResult(
+        "passthrough",
+        compressor.name === "tool-read" && isReadBelowThreshold(raw, configForCompressor(ctx.config, compressor.name))
+          ? "small"
+          : "excluded",
+      ); // circuit-broken: pass through
     }
 
     const t0 = performance.now();
@@ -529,7 +699,12 @@ async function processCall(
           compressor: compressor.name,
         });
       }
-      return; // output unchanged except possible redaction
+      return processResult(
+        "passthrough",
+        compressor.name === "tool-read" && isReadBelowThreshold(raw, configForCompressor(ctx.config, compressor.name))
+          ? "small"
+          : "fail_open",
+      ); // output unchanged except possible redaction
     }
     durationMs = Math.round(performance.now() - t0);
     compressed = candidate;
@@ -553,7 +728,7 @@ async function processCall(
         candidateBytes: compressed.length,
       });
     }
-    return;
+    return processResult("passthrough", "fail_open");
   }
   // No actual compression
   if (compressed === raw) {
@@ -568,23 +743,69 @@ async function processCall(
         compressor: compressorName,
       });
     }
-    return;
+    return processResult(
+      "passthrough",
+      compressorName === "generic-text" &&
+        !genericTextAllowsLossy(configForCompressor(ctx.config, compressorName))
+        ? "kept_exact"
+        : compressorName === "tool-read" && isReadBelowThreshold(raw, configForCompressor(ctx.config, compressorName))
+          ? "small"
+          : "fail_open",
+    );
   }
 
   const bodyRatio = compressed.length / raw.length;
-  const isLossyGeneric = isGenericCompressor(compressorName);
+  const isGeneric = isGenericCompressor(compressorName);
+  const isLossyGeneric =
+    isGeneric && genericTextAllowsLossy(configForCompressor(ctx.config, compressorName));
 
-  // Decide whether to tee
-  let teeFile: string | null = null;
   const shouldTee =
     isLossyGeneric ||
-    (ctx.tee && ctx.teeMode === "always") ||
-    (ctx.teeMode === "failures_and_compressed" && bodyRatio < 0.7);
+    (!isGeneric &&
+      ((ctx.tee && ctx.teeMode === "always") ||
+        (ctx.teeMode === "failures_and_compressed" && bodyRatio < 0.7)));
+  const plannedTeeFile =
+    shouldTee && ctx.tee
+      ? resolve(ctx.projectRoot, ctx.config.tee.directory, `${input.callID}.log`)
+      : null;
+
+  // Wrap compressed output in an envelope so the model can find the tee if needed
+  const origLines = raw.split("\n").length;
+  const buildCompressedOutput = (teeFile: string | null): string => {
+    const envelopeOpen =
+      `<qtk-compressed compressor=${compressorName} orig_lines=${origLines} ratio=${bodyRatio.toFixed(2)}` +
+      (isLossyGeneric ? ` lossy=true` : isGeneric ? ` lossless=true` : "") +
+      (teeFile ? ` tee=${pathToRelative(teeFile, ctx.projectRoot)}` : "") +
+      `>`;
+    return `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
+  };
+  const plannedOutput = buildCompressedOutput(
+    plannedTeeFile ? pathToRelative(plannedTeeFile, ctx.projectRoot) : null,
+  );
+  if (
+    estimateTokens(plannedOutput) >
+    estimateTokens(raw) * (1 - ctx.config.compression.minSavingsRatio)
+  ) {
+    const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
+    if (redacted) {
+      logRedacted(ctx.logger, input, args, target.shape, raw, redacted, {
+        reason: "not_worth_it",
+        compressor: compressorName,
+      });
+    } else {
+      logPassThrough(ctx.logger, input, args, target.shape, raw, "not_worth_it", {
+        compressor: compressorName,
+      });
+    }
+    return processResult("passthrough", "not_worth_it");
+  }
+
+  let teeFile: string | null = null;
   if (shouldTee && ctx.tee) {
     teeFile = await ctx.tee.write(input.callID, raw);
   }
-  // Generic fallbacks are intentionally lossy summaries. Require a recoverable
-  // raw tee so the agent can inspect exact content if needed.
+  // Lossy generic summaries require a recoverable raw tee; lossless JSON
+  // compaction preserves every JSON token and does not need one.
   if (isLossyGeneric && !teeFile) {
     const redacted = writePassThroughIfRedacted(target, raw, ctx.redactionEnabled);
     if (redacted) {
@@ -603,18 +824,12 @@ async function processCall(
         { compressor: compressorName },
       );
     }
-    return;
+    return processResult("passthrough", "no_tee");
   }
 
-  // Wrap compressed output in an envelope so the model can find the tee if needed
-  const origLines = raw.split("\n").length;
-  const envelopeOpen =
-    `<qtk-compressed compressor=${compressorName} orig_lines=${origLines} ratio=${bodyRatio.toFixed(2)}` +
-    (isLossyGeneric ? ` lossy=true` : "") +
-    (teeFile ? ` tee=${pathToRelative(teeFile, ctx.projectRoot)}` : "") +
-    `>`;
-
-  const compressedOutput = `${envelopeOpen}\n${compressed}\n</qtk-compressed>`;
+  const compressedOutput = buildCompressedOutput(
+    teeFile ? pathToRelative(teeFile, ctx.projectRoot) : null,
+  );
   const modelCompressedOutput = writeModelText(
     target,
     compressedOutput,
@@ -633,7 +848,7 @@ async function processCall(
     compressorSource: classifyCompressorSource(compressorName),
     resultShape: target.shape,
     isLossy: isLossyGeneric,
-    isGeneric: isGenericCompressor(compressorName),
+    isGeneric,
     originalBytes: raw.length,
     compressedBytes: modelCompressedOutput.text.length,
     originalTokensEst: estimateTokens(raw),
@@ -668,6 +883,20 @@ async function processCall(
     tee: teeFile ? pathToRelative(teeFile, ctx.projectRoot) : undefined,
     redactions: modelCompressedOutput.redactionCount || undefined,
   });
+  return processResult("compressed", compressorName);
+}
+
+function isReadBelowThreshold(raw: string, config: Record<string, unknown>): boolean {
+  if (!raw || raw.length < intOption(config, "min_input_bytes", 4000, { min: 0 })) return true;
+  const fileMatch = raw.match(/<file[^>]*>([\s\S]*)<\/file>/);
+  const body = fileMatch ? fileMatch[1]! : raw;
+  const lines = body.split("\n");
+  return lines.length < intOption(config, "outline_threshold_lines", 200, { min: 1, max: 100_000 });
+}
+
+function isGenericTextExcludedTool(tool: string): boolean {
+  return GENERIC_TEXT_POLICY_EXCLUSIONS.has(tool) ||
+    tool.startsWith("codebase-memory-mcp_") || tool.startsWith("octocode_");
 }
 
 interface ModelWriteResult {
@@ -817,6 +1046,58 @@ function hasPerCallQtkDisabled(
   if (!command) return false;
   const env = readLeadingEnvAssignments(command);
   return isTruthyEnv(env.QTK_DISABLED);
+}
+
+/** Remove leading shell environment assignments before measuring the rerun command. */
+function stripLeadingEnvAssignments(command: string): string {
+  const tokens = command.trim().split(/\s+/);
+  let firstCommand = 0;
+  while (firstCommand < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[firstCommand]!)) {
+    firstCommand++;
+  }
+  return tokens.slice(firstCommand).join(" ");
+}
+
+/** Find configured QTK tee log paths in argument strings, resolving each to an absolute path. */
+function findTeeReferences(
+  args: Record<string, unknown>,
+  projectRoot: string,
+  teeDirectory: string,
+): string[] {
+  const root = resolve(projectRoot);
+  const absoluteDirectory = resolve(root, teeDirectory);
+  const relativeDirectory = relative(root, absoluteDirectory);
+  const directoryPatterns = [
+    `(?<![A-Za-z0-9_/-])${escapeRegExp(absoluteDirectory)}`,
+  ];
+  if (relativeDirectory) {
+    directoryPatterns.push(
+      `(?:(?<![\\s\\S])|(?<=[\\s'"\\x60=():;|&><]))(?:\\./)*${escapeRegExp(relativeDirectory)}`,
+    );
+  }
+  const pattern = new RegExp(
+    `(?:${directoryPatterns.join("|")})/([A-Za-z0-9_-]+\\.log)(?![A-Za-z0-9_.-])`,
+    "g",
+  );
+  const matches = new Set<string>();
+  const visit = (value: unknown, depth: number): void => {
+    if (typeof value === "string") {
+      for (const match of value.matchAll(pattern)) {
+        const path = match[0];
+        matches.add(resolve(root, path));
+      }
+      return;
+    }
+    if (depth >= 4 || value === null || typeof value !== "object") return;
+    const children = Array.isArray(value) ? value : Object.values(value);
+    for (const child of children) visit(child, depth + 1);
+  };
+  visit(args, 0);
+  return [...matches];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isHardPassthroughTool(tool: string): boolean {

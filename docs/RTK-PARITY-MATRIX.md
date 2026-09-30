@@ -1,13 +1,13 @@
 # QTK ↔ RTK Parity Matrix
 
-This matrix tracks QTK's current coverage against the command families covered
+This planning matrix tracks QTK's claimed implementation coverage against the command families covered
 by [RTK](https://github.com/rtk-ai/rtk). It is a planning artifact, not a claim
 that QTK already matches RTK.
 
-QTK's goal is not to clone RTK's cross-agent integrations. The goal is to bring
-RTK-style deterministic compression coverage to opencode's native
-`tool.execute.after` surface, including `Read`, `Grep`, `Glob`, and eventually
-MCP text results that RTK's OpenCode rewrite plugin does not compress today.
+This is not parity certification or evidence of live integration. QTK currently
+targets OpenCode V1 only; QTK is the sole OpenCode plugin, with RTK used as an
+external helper. Native `Read`, `Grep`, `Glob`, and MCP text outputs are already
+handled where matching compressors apply.
 
 ## Legend
 
@@ -34,9 +34,9 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 | Containers | `docker ps/images/logs/compose`, `kubectl`, `oc` | `kubectl -o yaml/json` active sidecar | DSL/TS for Docker; sidecar for heavy K8s structured output | Medium |
 | Infrastructure/cloud | `terraform`, `tofu`, `aws`, `gcloud`, `helm`, `ansible`, `pulumi`, `sops` | `terraform-plan` active sidecar; many bundled filters active by default | Sidecar for heavy JSON/YAML | Medium |
 | Network/system | `curl`, `wget`, `ping`, `df`, `du`, `ps`, `systemctl`, `rsync` | Some bundled filters active by default; generic fallback active for recognizable text shapes | Add more specific postprocessors as needed | Medium |
-| Generic wrappers | `rtk err`, `rtk test`, `rtk summary`, `rtk log`, `rtk json` | `generic-text` fallback active for path lists, diagnostics, JSON schema summaries, markdown outlines, repeated logs | Add RTK/OpenToken-inspired refinements and config | High |
-| Security/redaction | Secret-aware command shaping in RTK command families | Global model-facing and tee redaction active | Add redaction accounting | Critical |
-| Analytics/discovery | `rtk gain`, `discover`, session analytics | `qtk gain` reports totals plus by-compressor/tool/source/result-shape for successful compressions | Add pass-through/missed-savings, rewrites, redactions | Medium |
+| Generic wrappers | `rtk err`, `rtk test`, `rtk summary`, `rtk log`, `rtk json` | `generic-text` losslessly compacts eligible JSON by default; path lists, diagnostics, JSON schema summaries, markdown outlines, and repeated-log summaries are opt-in with `allow_lossy` | Add RTK/OpenToken-inspired refinements and config | High |
+| Security/redaction | Secret-aware command shaping in RTK command families | Model-facing and tee redaction follow `[qtk.redaction] enabled` | Add redaction accounting | Critical |
+| Analytics/discovery | `rtk gain`, `discover`, session analytics | `qtk gain` reports a tokens-first calls funnel when available, USD opt-in, separately scoped RTK totals, and recall proxies | Add pass-through/missed-savings, rewrites, redactions | Medium |
 
 ## Implementation order
 
@@ -45,13 +45,13 @@ MCP text results that RTK's OpenCode rewrite plugin does not compress today.
 2. **Everyday TS compressors** — partially done for package managers and
    `find`/`fd`; remaining: JS test runners, `git diff/show`, `gh`,
    `tsc`/`eslint`, Docker.
-3. **Generic postprocessors** — partially done with `generic-text`: path/list grouping, diagnostics grouping, JSON schema summary, markdown outline, and repeated/log-like line dedupe. Remaining refinements: ANSI strip, richer entropy normalization, long-line truncation, and failure/error extraction.
+3. **Generic postprocessors** — `generic-text` compacts eligible JSON losslessly by default; path/list grouping, diagnostics grouping, JSON schema summaries, markdown outlines, and repeated/log-like line dedupe remain available only with `allow_lossy = true`. Remaining refinements: ANSI strip, richer entropy normalization, long-line truncation, and failure/error extraction.
 4. **All-tool result normalization** — partially done: normal output strings
-   and MCP text content can be mutated safely; next add generic compressors for
-   MCP/task text outputs.
+    and MCP text content can be mutated safely; generic `task`/MCP fallback is
+    available with lossless JSON compaction by default.
 5. **Safe pre-call optimizations** — done for whitelist-only Bash rewrites (`pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`, Gradle `--quiet --console=plain`) with verbosity opt-outs and `QTK_DISABLED=1` / `QTK_REWRITE_DISABLED=1` escape hatches.
-6. **Model-facing secret redaction** — done: compressed, pass-through, and MCP text outputs are redacted before they reach the model; tee writes share the same redactor.
-7. **Analytics expansion** — partially done for successful compressions: `qtk gain` explains savings by compressor, tool, source, and result shape. Remaining: pass-through/missed-savings candidates, rewrites, and redactions.
+6. **Model-facing secret redaction** — compressed, pass-through, and MCP text outputs are redacted before they reach the model when `[qtk.redaction] enabled` is true; tee writes follow the same setting.
+7. **Analytics expansion** — `qtk gain` reports the calls funnel and compression groups when calls exist; legacy compression-only databases get `legacy_compressions` JSON without inferred funnel, call denominators, or reason groups. `--db PATH` reads without migration or writes. Recall counts are proxies. Remaining: pass-through/missed-savings candidates, rewrites, and redactions.
 
 ## What not to port
 

@@ -8,7 +8,7 @@
 //   src/bar.ts:
 //     Line 8: useEffect imported here
 //
-// Strategy: same as rg compressor — group by file, cap top 3 matches per
+// Strategy: same as rg compressor — group by file, cap top 5 matches per
 // file, total cap on files shown.
 
 import type { Compressor, CompressorContext } from "../types.ts";
@@ -26,7 +26,7 @@ export const grepToolCompressor: Compressor = {
     const minInputBytes = intOption(ctx.config, "min_input_bytes", 500, {
       min: 0,
     });
-    const minMatches = intOption(ctx.config, "min_matches", 10, {
+    const minMatches = intOption(ctx.config, "min_matches", 20, {
       min: 1,
       max: 1000,
     });
@@ -34,17 +34,20 @@ export const grepToolCompressor: Compressor = {
       min: 1,
       max: 500,
     });
-    const maxMatchesPerFile = intOption(ctx.config, "max_matches_per_file", 3, {
+    const maxMatchesPerFile = intOption(ctx.config, "max_matches_per_file", 5, {
       min: 1,
       max: 100,
     });
-    const maxLineChars = intOption(ctx.config, "max_line_chars", 100, {
+    const maxLineChars = intOption(ctx.config, "max_line_chars", 200, {
       min: 20,
       max: 1000,
     });
     if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
+    const resultLimitNotes = lines.filter((line) =>
+      /\(Results truncated\.|\(more matches available\)/.test(line),
+    );
     type Match = { line: number; text: string };
     const byFile = new Map<string, Match[]>();
 
@@ -66,6 +69,7 @@ export const grepToolCompressor: Compressor = {
     if (byFile.size === 0) return raw;
 
     const totalMatches = [...byFile.values()].reduce((a, b) => a + b.length, 0);
+    if (totalMatches === 0) return raw;
     if (totalMatches < minMatches) return raw; // already small
 
     const files = [...byFile.entries()].sort(
@@ -96,6 +100,8 @@ export const grepToolCompressor: Compressor = {
         .reduce((a, b) => a + b[1].length, 0);
       out.push(`... and ${remaining} more files (${remainMatches} matches)`);
     }
+
+    for (const note of resultLimitNotes) out.push(note);
 
     const result = out.join("\n");
     if (result.length >= raw.length) return raw;
