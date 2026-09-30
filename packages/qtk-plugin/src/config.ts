@@ -5,6 +5,7 @@
 import { homedir } from "node:os";
 import { resolve, isAbsolute, join } from "node:path";
 import type { QtkConfig } from "./types.ts";
+import { DEFAULT_RTK_ALLOW, DEFAULT_RTK_DENY } from "./rtk.ts";
 
 export const DEFAULT_CONFIG: QtkConfig = {
   enabled: true,
@@ -12,9 +13,17 @@ export const DEFAULT_CONFIG: QtkConfig = {
   dedupTtlSeconds: 60,
   compression: {
     minInputBytes: 200,
+    minSavingsRatio: 0.1,
   },
   rewrite: {
     enabled: true,
+  },
+  rtk: {
+    enabled: true,
+    binary: "rtk",
+    rewriteTimeoutMs: 1000,
+    allow: DEFAULT_RTK_ALLOW,
+    deny: DEFAULT_RTK_DENY,
   },
   redaction: {
     enabled: true,
@@ -36,7 +45,8 @@ export const DEFAULT_CONFIG: QtkConfig = {
   },
   stats: {
     enabled: true,
-    database: ".opencode/qtk-stats.sqlite",
+    database: join(homedir(), ".local", "share", "qtk", "stats.sqlite"),
+    retentionDays: 90,
   },
   filters: {
     bundled: true,
@@ -75,18 +85,31 @@ export function resolveSafePath(
  */
 export async function loadConfig(projectRoot: string): Promise<QtkConfig> {
   let config = DEFAULT_CONFIG;
+  let configuredStatsPath = false;
   for (const path of [globalConfigPath(), projectConfigPath(projectRoot)]) {
     const f = Bun.file(path);
     if (!(await f.exists())) continue;
     try {
       const text = await f.text();
       const parsed = parseToml(text);
+      const qtk = parsed.qtk as Record<string, unknown> | undefined;
+      const stats = qtk?.stats as Record<string, unknown> | undefined;
+      if (typeof stats?.path === "string" || typeof stats?.database === "string") configuredStatsPath = true;
       config = mergeConfig(projectRoot, config, parsed);
     } catch (e) {
       console.warn(`[qtk] config load failed for ${path}:`, e);
     }
   }
-  return validateConfigPaths(projectRoot, config);
+  const validated = validateConfigPaths(projectRoot, config);
+  const statsPath = process.env.QTK_STATS_PATH;
+  if (statsPath && isAbsolute(statsPath)) {
+    return { ...validated, stats: { ...validated.stats, database: statsPath } };
+  }
+  if (!configuredStatsPath) {
+    const base = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+    return { ...validated, stats: { ...validated.stats, database: join(base, "qtk", "stats.sqlite") } };
+  }
+  return validated;
 }
 
 function globalConfigPath(): string {
@@ -238,6 +261,7 @@ function mergeConfig(
     (qtk.compression as Record<string, unknown> | undefined) ?? {};
   const rewriteOverride =
     (qtk.rewrite as Record<string, unknown> | undefined) ?? {};
+  const rtkOverride = (qtk.rtk as Record<string, unknown> | undefined) ?? {};
   const redactionOverride =
     (qtk.redaction as Record<string, unknown> | undefined) ?? {};
   const sidecarOverride =
@@ -251,6 +275,18 @@ function mergeConfig(
     {};
   const toolsOverride =
     (qtk.tools as Record<string, Record<string, unknown>> | undefined) ?? {};
+  const configuredRtkTimeout = rtkOverride.rewrite_timeout_ms;
+  const rtkTimeout =
+    typeof configuredRtkTimeout === "number" &&
+    Number.isFinite(configuredRtkTimeout)
+      ? configuredRtkTimeout
+      : base.rtk.rewriteTimeoutMs;
+  const configuredMinSavings = compressionOverride.min_savings_ratio;
+  const minSavingsRatio =
+    typeof configuredMinSavings === "number" &&
+    Number.isFinite(configuredMinSavings)
+      ? configuredMinSavings
+      : base.compression.minSavingsRatio;
 
   return {
     enabled: (qtk.enabled as boolean | undefined) ?? base.enabled,
@@ -262,11 +298,23 @@ function mergeConfig(
       minInputBytes:
         (compressionOverride.min_input_bytes as number | undefined) ??
         base.compression.minInputBytes,
+      minSavingsRatio: Math.max(0, Math.min(0.9, minSavingsRatio)),
     },
     rewrite: {
       enabled:
         (rewriteOverride.enabled as boolean | undefined) ??
         base.rewrite.enabled,
+    },
+    rtk: {
+      enabled: (rtkOverride.enabled as boolean | undefined) ?? base.rtk.enabled,
+      binary: (rtkOverride.binary as string | undefined) ?? base.rtk.binary,
+      rewriteTimeoutMs: Math.max(50, Math.min(10_000, rtkTimeout)),
+      allow: readStringArray(rtkOverride.allow)?.map((entry) =>
+        entry.trim().replace(/\s+/g, " "),
+      ) ?? base.rtk.allow,
+      deny: readStringArray(rtkOverride.deny)?.map((entry) =>
+        entry.trim().replace(/\s+/g, " "),
+      ) ?? base.rtk.deny,
     },
     redaction: {
       enabled:
@@ -308,7 +356,9 @@ function mergeConfig(
       enabled:
         (statsOverride.enabled as boolean | undefined) ?? base.stats.enabled,
       database:
+        (statsOverride.path as string | undefined) ??
         (statsOverride.database as string | undefined) ?? base.stats.database,
+      retentionDays: Math.max(0, (statsOverride.retention_days as number | undefined) ?? base.stats.retentionDays),
     },
     filters: {
       bundled:
@@ -371,9 +421,11 @@ function validateConfigPaths(projectRoot: string, config: QtkConfig): QtkConfig 
   const teeDirectory = resolveSafePath(projectRoot, config.tee.directory)
     ? config.tee.directory
     : DEFAULT_CONFIG.tee.directory;
-  const statsDatabase = resolveSafePath(projectRoot, config.stats.database)
+  const statsDatabase = isAbsolute(config.stats.database)
     ? config.stats.database
-    : DEFAULT_CONFIG.stats.database;
+    : resolveSafePath(projectRoot, config.stats.database)
+      ? resolve(projectRoot, config.stats.database)
+      : DEFAULT_CONFIG.stats.database;
   if (
     teeDirectory === config.tee.directory &&
     statsDatabase === config.stats.database

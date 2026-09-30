@@ -64,6 +64,10 @@ export const genericTextCompressor: Compressor = {
       return raw;
     }
 
+    if (!genericTextAllowsLossy(ctx.config)) {
+      return compactJsonLosslessly(raw, ctx.config);
+    }
+
     for (const candidate of [
       compressJson(raw, ctx.config),
       compressDiagnostics(raw, ctx.config),
@@ -76,6 +80,49 @@ export const genericTextCompressor: Compressor = {
     return raw;
   },
 };
+
+/** Return whether generic-text may discard details; invalid or absent options default to false. */
+export function genericTextAllowsLossy(
+  options: Record<string, unknown>,
+): boolean {
+  return boolOption(options, "allow_lossy", false);
+}
+
+function compactJsonLosslessly(raw: string, config: Record<string, unknown>): string {
+  if (stringArrayOption(config, "disabled_shapes").includes("json")) return raw;
+
+  let value: unknown;
+  try {
+    value = JSON.parse(raw.trim());
+  } catch {
+    return raw;
+  }
+  if (value === null || typeof value !== "object") return raw;
+
+  const compact: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (const char of raw) {
+    if (inString) {
+      compact.push(char);
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') {
+      inString = true;
+      compact.push(char);
+    } else if (char !== " " && char !== "\t" && char !== "\n" && char !== "\r") {
+      compact.push(char);
+    }
+  }
+
+  const output = compact.join("");
+  const minSavedBytes = intOption(config, "json_compact_min_saved_bytes", 256, {
+    min: 0,
+    max: 1_000_000,
+  });
+  return raw.length - output.length >= minSavedBytes ? output : raw;
+}
 
 function compressJson(raw: string, config: Record<string, unknown>): string | null {
   if (stringArrayOption(config, "disabled_shapes").includes("json")) return null;

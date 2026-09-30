@@ -75,10 +75,22 @@ export interface QtkConfig {
   readonly compression: {
     /** Output below this size is only redacted/cache-checked, not compressed. */
     readonly minInputBytes: number;
+    /** Required token savings after the complete model-facing envelope is added. */
+    readonly minSavingsRatio: number;
   };
 
   readonly rewrite: {
     readonly enabled: boolean;
+  };
+
+  readonly rtk: {
+    readonly enabled: boolean;
+    /** PATH name or absolute path to the RTK executable. */
+    readonly binary: string;
+    readonly rewriteTimeoutMs: number;
+    /** Allowed token prefixes after each `rtk` executable segment. */
+    readonly allow: readonly string[];
+    readonly deny: readonly string[];
   };
 
   readonly redaction: {
@@ -107,6 +119,8 @@ export interface QtkConfig {
   readonly stats: {
     readonly enabled: boolean;
     readonly database: string;
+    /** Number of days to retain SQLite rows; zero disables pruning. */
+    readonly retentionDays: number;
   };
 
   readonly filters: {

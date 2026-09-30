@@ -25,25 +25,27 @@ is therefore:
    input could DoS the agent loop.
 5. **Tool outputs leaking secrets** — model-facing output and tee files may
    contain secrets (AWS keys printed by `env`, OAuth tokens in `git remote -v`
-   URLs, private keys, etc.). QTK redacts common patterns before mutating the
-   tool result for the model and before writing recovery tee files.
+    URLs, private keys, etc.). When `[qtk.redaction] enabled` is true, QTK
+    redacts common patterns before mutating model output and writing recovery
+    tee files; disabling it leaves both outputs unredacted.
 
 ---
 
 ## Hard rules — properties of QTK that hold by construction
 
-### 1. QTK never executes code
+### 1. QTK does not execute requested commands
 
-The bash tool runs the command. The Read/Grep/Glob tools run their own
-filesystem operations. QTK is a pure string-in-string-out transformer over
-the result. We **never** call `Bun.spawn`, `child_process.exec`,
-`new Function`, `eval`, or anything equivalent.
+The OpenCode tool runs the command. QTK invokes the optional external RTK
+helper via `Bun.spawn` for `rtk rewrite`; OpenCode then applies its permissions
+and the Bash tool executes the resulting command. QTK's output compressors
+transform results; they do not execute the requested command themselves.
 
 **Why this matters:** RTK has documented `sh -c <user_input>` paths in
 `rtk summary`, `rtk err`, `rtk test`, and `rtk proxy` (RTK audit §2.1). These
-are intentional features for chaining commands, but they create a path
-from "agent can produce a string" to "shell executes that string." QTK
-eliminates this surface entirely. If you `rg -i "spawn|exec|eval|Function\(" qtk-plugin/src/` you should get **zero matches** in non-test code.
+are intentional features for chaining commands, but create a path from
+agent-produced text to shell execution. QTK's bounded helper invocation does
+not itself run the requested command through a shell; this is not a claim that
+the plugin or its RTK helper is a security sandbox.
 
 ### 2. QTK has no network code
 
@@ -59,16 +61,16 @@ disclose it. RTK addresses this by making telemetry opt-in. QTK addresses
 it by **not having any network code at all**, so there is nothing to
 verify.
 
-### 3. QTK never modifies the command
+### 3. QTK command rewriting is narrow and explicit
 
-The model writes `git status` → the bash tool runs `git status` → QTK sees
-the output of `git status`. QTK does not change `args.command` (that's the
-`tool.execute.before` hook; QTK now uses a very small Bash-only whitelist for quiet flags). The model's intent is
-preserved exactly.
+QTK's OpenCode V1 before-hook first asks external RTK to rewrite Bash commands
+when RTK resolves; defaults accept suggestions (`allow=["*"]`, `deny=[]`). If
+RTK declines, QTK may apply only its whitelist-safe quiet-flag rewrites. The
+after-hook handles result text.
 
-**Why this matters:** if QTK had a bug in command rewriting, it could
-silently substitute one command for another. We avoid this entire class
-of bugs by not touching the command.
+**Why this matters:** OpenCode V1 evaluates permissions against rewritten
+input, and records that input in tool history. Permission rules may need
+rewritten `rtk …` variants, and agents may imitate the rewritten command.
 
 ### 4. QTK never crashes the agent
 
@@ -150,16 +152,21 @@ return compressed;
 
 ### Secrets-aware model output and tee files
 
-Some commands emit secrets. The model-facing writer and tee writer share the
-same scanner for common secret patterns and redact them inline before the text
-is exposed to the model or written to disk.
+Some commands emit secrets. Redaction is enabled by default. When
+`[qtk.redaction] enabled` is true, the
+model-facing writer and tee writer share the same scanner for common secret
+patterns and redact them inline before text is exposed to the model or written
+to disk. When disabled, both model-facing output and QTK tee files are
+unredacted; that local override does not change the code default. RTK's own raw
+recovery store is external and is not masked by QTK.
 
-This is best-effort — we don't try to be a DLP solution. But the obvious
-cases shouldn't be in model context or on disk in plaintext.
+This is best-effort — we don't try to be a DLP solution. When enabled, the
+obvious cases should not be in model context or on disk in plaintext.
 
-Redaction-only pass-through output intentionally does not include a raw tee
-path: writing unredacted secrets to disk would defeat the safety goal. For exact
-local Bash output, rerun the command with `QTK_DISABLED=1 <command>`.
+With redaction enabled, redaction-only pass-through output intentionally does
+not include a raw tee path: writing unredacted secrets to disk would defeat the
+safety goal. For exact local Bash output, rerun the command with
+`QTK_DISABLED=1 <command>`.
 
 Patterns scanned:
 
@@ -179,7 +186,7 @@ For each RTK audit finding, here's QTK's posture:
 
 | RTK Finding                                             | RTK Severity | QTK posture                                                                      |
 | ------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------- |
-| §2.1 `sh -c user_input` in summary/err/test             | HIGH         | Doesn't exist (QTK never executes anything)                                      |
+| §2.1 `sh -c user_input` in summary/err/test             | HIGH         | QTK does not run requested commands; it does spawn external `rtk rewrite` helper |
 | §7.1 Install script no signature verification           | HIGH         | Doesn't apply (QTK is a plugin file, no installer)                               |
 | §3.1 Tee files 0o644 (umask-default)                    | Medium       | Explicit 0o600                                                                   |
 | §3.2 RTK_TEE_DIR env env-redirect, no validation        | Medium       | Config-only path, canonicalised to project root                                  |
@@ -208,8 +215,8 @@ of QTK:
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | What URLs does QTK call?                               | None. There is no HTTP client.                                                                   |
 | Where is telemetry sent?                               | Local SQLite. No network code exists.                                                            |
-| Can a malicious command output execute code via QTK?   | No — QTK never executes anything.                                                                |
-| Where does QTK write to disk?                          | `.opencode/qtk-tee/` (mode 0o700), `.opencode/qtk-stats.sqlite`, `.opencode/qtk-savings.json`.   |
+| Can a malicious command output execute code via QTK?   | No direct execution by output compressors; Bash routing invokes external RTK helper and host permissions apply. |
+| Where does QTK write to disk?                          | `.opencode/qtk-tee/` (mode 0o700), global `${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite` stats DB, `.opencode/qtk-savings.json`. |
 | Permissions on tee files?                              | 0o600 explicit                                                                                   |
 | Can the tee directory be redirected?                   | Only via `.opencode/qtk.toml`, must canonicalise to inside project. Env vars are ignored.        |
 | Does QTK auto-update?                                  | No.                                                                                              |

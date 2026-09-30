@@ -1,16 +1,57 @@
-# Integrating QTK with opencode
+# Integrating QTK with OpenCode V1
 
-> Step-by-step guide to installing QTK into any opencode-based agent
-> (stock [opencode](https://github.com/sst/opencode) ≥ 1.1.21, or compatible
-> forks). QTK ships as a plain opencode plugin — no patching of the host.
+> Step-by-step guide for OpenCode V1 only. Fork compatibility is not claimed.
+> QTK is the single installed OpenCode plugin; RTK, if installed, is an
+> external helper binary called by QTK, not a second OpenCode plugin.
 
 ---
 
 ## Prerequisites
 
 - Bun ≥ 1.3.5 (`bun --version`)
-- opencode ≥ 1.1.21 (or a fork that loads `@opencode-ai/plugin`-compatible plugins)
+- OpenCode V1 (QTK does not claim V2 or fork compatibility)
 - A QTK checkout
+
+## Using QTK with RTK (hybrid)
+
+QTK calls `rtk rewrite` in its Bash before-hook whenever RTK is installed and
+honors RTK suggestions by default. QTK compressors remain fallback when RTK
+declines or is unavailable. Decisions apply per shell segment; denied segments
+retain original text, while segmentation-count mismatches use all-or-nothing
+policy. Agent-entered denied `rtk <proxy>` prefixes are stripped before rewrite,
+but RTK-native subcommands remain intact.
+
+Configure `.opencode/qtk.toml`:
+
+```toml
+[qtk.rtk]
+enabled = true
+binary = "rtk"              # PATH name or absolute executable path
+rewrite_timeout_ms = 1000   # 50–10000 ms
+allow = ["*"]
+deny = []
+```
+
+`allow`/`deny` use token prefixes per segment; deny takes precedence. Add
+families such as `"rg"` or `"git diff"` to `deny` for QTK to retain. RTK itself
+declines redirects, pipes into programs, and `--json`; QTK honors these safety
+declines. `rtk recall`/`proxy`, `RTK_DISABLED=1`, and RTK tee references are
+classified separately in call stats. Tee references, tee reads and bypass
+reruns are recall proxies, not proof a particular compression caused recovery.
+
+`enabled = true` is automatic: RTK coordination activates only if the binary
+resolves. RTK ≥0.45 works; 0.49+ is recommended for SQLite recall and safer
+pipeline rewriting. Do not install RTK's own OpenCode plugin alongside this
+integration. **Permission caveat:** OpenCode evaluates Bash permissions after the
+before-hook, against the rewritten `rtk …` command. Thus a rule such as
+`"git push *": "ask"` no longer matches. Exclude such commands in RTK's
+`[hooks] exclude_commands`, or add matching rules for `"rtk git push *"`.
+OpenCode V1 also persists the rewritten command input in tool history; agents
+may imitate the visible `rtk …` command in later calls. QTK only normalizes
+denied/unallowed proxy commands, not RTK-native commands.
+If RTK returns exit code 2, QTK leaves the original command unchanged and does
+not apply a QTK quiet rewrite. QTK does not enforce RTK/Claude Code denials;
+OpenCode permissions govern whether the command executes.
 
 In the snippets below, replace `$QTK` with the path to your QTK checkout and
 `$OC` with the path to your opencode project root (the directory containing
@@ -95,23 +136,21 @@ The script symlinks the plugin and patches `.opencode/opencode.jsonc`
 (creating a `.bak` first). Recommended for active QTK development where
 you want changes to QTK's source picked up on the next session start.
 
-## Install method 4 — symlink (for QTK contributors)
+## Install method 4 — source-mode plugin (for QTK contributors)
 
 Same as method 3 but manual, useful if you don't trust automated config
 edits or want to understand the moving parts.
 
 ```bash
-# 1. Build qtk-plugin (creates dist/index.js)
+# 1. No build/prebuild is required for local source mode.
 cd "$QTK"
-bun install
-bun run build
 
 # 2. Symlink into opencode's plugin directory
 mkdir -p "$OC/.opencode/plugin"
 ln -sfn "$QTK/packages/qtk-plugin" "$OC/.opencode/plugin/qtk"
 
 # 3. Register in opencode.jsonc — add to the "plugin" array:
-#       "file://.opencode/plugin/qtk/src/index.ts"
+#       "file:///absolute/path/to/QTK/packages/qtk-plugin/src/index.ts"
 
 # 4. Restart opencode
 ```
@@ -131,7 +170,7 @@ You should see:
 If you see a load error instead, check:
 
 - `.opencode/plugin/qtk` symlink target exists and is readable
-- `dist/index.js` exists (run `bun run build` in QTK)
+- The plugin entry points to the intended source file in source mode, or package/bundle entry for npm/dist installs
 - `opencode.jsonc` has the plugin path correctly listed
 
 ---
@@ -150,13 +189,24 @@ rg useEffect packages/
 Then inspect the stats DB directly:
 
 ```bash
-sqlite3 "$OC/.opencode/qtk-stats.sqlite" \
+sqlite3 "${QTK_STATS_PATH:-${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite}" \
   "SELECT tool, compressor, original_bytes, compressed_bytes,
           ROUND(ratio, 2) AS ratio
    FROM compressions
    ORDER BY ts DESC
    LIMIT 20;"
 ```
+
+The shared database defaults to `${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite`.
+Absolute `QTK_STATS_PATH` overrides it; `[qtk.stats] path` supports absolute or
+project-relative confined paths. `retention_days` defaults to 90 (`0` keeps
+rows forever). The `calls` table logs every processed hook, including
+passthrough reasons (`small`, `kept_exact`, `no_compressor`, `fail_open`,
+`not_worth_it`, `no_tee`, `excluded`, `error`); `compressions` holds
+compressor/cache-hit details. `kept_exact` identifies unchanged default-lossless
+`generic-text` output, while a below-threshold Read result is categorized as
+`small`; `fail_open` remains for compressor declines/parse failures and output
+that did not shrink.
 
 Or via the CLI:
 
@@ -207,12 +257,13 @@ dedup_ttl_seconds = 60
 
 [qtk.compression]
 min_input_bytes = 200
+min_savings_ratio = 0.10 # estimated-token savings after the full QTK envelope
 
 [qtk.rewrite]
 enabled = true # set false to disable Bash quiet rewrites
 
 [qtk.redaction]
-enabled = true # model-facing redaction; tee files still redact on write
+enabled = true # controls redaction of model-facing output and tee files
 
 [qtk.sidecar]
 enabled = true # set false to skip qtk-core lookup/use
@@ -234,7 +285,9 @@ enabled = true # set false to disable this built-in compressor
 max_files_per_section = 15
 
 [qtk.compressors.generic_text]
-enabled = true # lossy MCP/task fallback; disable if too aggressive
+enabled = true # lossless JSON compaction by default for MCP/task fallback
+json_compact_min_saved_bytes = 256
+allow_lossy = false # opt in to lossy summaries; these require a tee
 disabled_shapes = [] # json | diagnostics | path_list | markdown | repeated_lines
 
 [qtk.tools.read]
@@ -242,9 +295,33 @@ enabled = true # maps to internal compressor name tool-read
 outline_threshold_lines = 200
 ```
 
+By default, this fallback compacts valid JSON objects/arrays only by removing
+whitespace outside string literals; values, number formatting, and key order
+are preserved. It applies only when the configured minimum saving is reached
+(256 bytes by default); all other output passes through unchanged. Results are
+marked `lossless=true` and are not teed. Set `allow_lossy = true` to enable the
+previous summaries, which are marked `lossy=true` and pass through unchanged
+if a tee cannot be written.
+
+When a calls table exists, `qtk gain` reports a tokens-first funnel; USD is
+opt-in and RTK totals are separately scoped. QTK tee reads and bypass reruns
+are recall proxies, not proof of causal recovery. Legacy compression-only
+databases produce `legacy_compressions` JSON and omit the funnel, invented call
+denominators, and reason groups; `--db PATH` reads without migration or writes.
+A read of a QTK tee file passes through uncompressed (redaction
+applies when `[qtk.redaction] enabled` is true) and flags its originating
+compression. A Bash rerun with
+`QTK_DISABLED=1` of a command compressed in the same session within 15 minutes
+also flags the originating compression.
+
 The config loader currently supports booleans, numbers, strings, arrays, and
 section tables. Project config overrides global config; per-compressor/per-tool
 tables are deep-merged by table name.
+
+The default `min_savings_ratio = 0.10` compares estimated tokens for the
+complete model-facing envelope with the raw output; if savings are below the
+configured threshold, QTK passes the original through. `qtk gain` is
+tokens-first, USD is opt-in, and RTK statistics are separately scoped.
 
 For adding custom per-project compressors as TOML filters in
 `.opencode/qtk/filters/`, see `docs/FILTER-DSL.md` and
@@ -254,35 +331,25 @@ For adding custom per-project compressors as TOML filters in
 
 ## Coexistence with RTK
 
-If you have [RTK](https://github.com/rtk-ai/rtk) installed already (as
-`~/.local/bin/rtk` + the OpenCode plugin at `.opencode/plugin/rtk.ts`),
-QTK is additive. The order of plugins in `opencode.jsonc` matters:
-
-```jsonc
-{
-  "plugin": [
-    "file://.opencode/plugin/rtk.ts", // RTK rewrites commands (before)
-    "file://.opencode/plugin/qtk", // QTK compresses outputs (after)
-  ],
-}
-```
-
-RTK runs on `tool.execute.before` and rewrites bash commands. QTK runs on
-`tool.execute.after` and compresses what comes back. No conflict.
+QTK alone is registered as the OpenCode plugin. Its V1 before-hook calls the
+external RTK helper first when available; RTK suggestions are accepted by
+default (`allow=["*"]`, `deny=[]`). QTK handles outputs afterward. Do not add
+RTK's OpenCode plugin as a second integration.
 
 When the agent writes `git status`:
 
-1. RTK turns it into `rtk git status`
-2. Bash runs `rtk git status` — RTK's internal git filter produces compact output
-3. QTK's git compressor sees the already-compact output, skips
-4. Model sees the small compact form
+1. QTK invokes external `rtk rewrite`, which may turn the request into
+   `rtk git status`; OpenCode history retains the rewritten command.
+2. OpenCode permissions apply to the rewritten command. Bash runs the
+   resulting `rtk git status`; RTK may produce compact output.
+3. QTK's after-hook skips the already-compact RTK output.
+4. The model sees the compact form.
 
-When the agent writes `cat src/foo.ts`:
-
-1. RTK has no rewrite rule for `cat <file>`, passes through
-2. Bash runs `cat src/foo.ts` — raw file contents
-3. QTK's generic file-content compressor truncates/outlines if large
-4. Model sees the compressed form
+For a command such as `cat src/foo.ts`, RTK may rewrite it to `rtk read`; do not
+assume a particular installed RTK mapping. If RTK rewrites it, QTK stands down
+from re-compressing that RTK output. Otherwise QTK may apply a matching fallback;
+generic-text compacts eligible JSON losslessly by default, with other generic
+summaries opt-in via `allow_lossy = true`. Unmatched output passes through.
 
 So even with RTK, QTK catches what RTK misses — particularly built-in tools
 (`Read`/`Grep`/`Glob`), which RTK can't reach at all.
@@ -317,7 +384,7 @@ rm "$OC/.opencode/plugin/qtk.js"
 
 # Optional: remove the cache/stats files
 rm -rf "$OC/.opencode/qtk-tee/"
-rm "$OC/.opencode/qtk-stats.sqlite"
+rm "${QTK_STATS_PATH:-${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite}"
 
 # Restart opencode — no QTK
 ```
@@ -329,7 +396,7 @@ rm "$OC/.opencode/qtk-stats.sqlite"
 | Symptom                                 | Likely cause                            | Fix                                                            |
 | --------------------------------------- | --------------------------------------- | -------------------------------------------------------------- |
 | `[qtk] active` never appears on startup | Plugin not registered in opencode.jsonc | Check the `plugin` array includes the file:// path             |
-| Plugin loads but no compression happens | Compressor matches not triggering       | Check `qtk-stats.sqlite` — empty? Compressor names wrong?      |
+| Plugin loads but no compression happens | Compressor matches not triggering       | Check the global `qtk/stats.sqlite` — empty? Compressor names wrong? |
 | Stats DB has entries but ratio is 1.0   | Compressor returning input unchanged    | Likely raw output already short, or compressor has a bug       |
 | `qtk-tee/` files are world-readable     | OS umask interfering                    | Open issue — files are written with explicit `mode: 0o600`     |
 | Latency spikes per tool call > 50 ms    | Compressor regex backtracking           | Identify offending compressor in stats `duration_ms`, file bug |

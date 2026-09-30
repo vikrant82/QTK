@@ -33,6 +33,20 @@ export const rgCompressor: Compressor = {
   },
 
   compress(raw: string, ctx: CompressorContext): string {
+    const command = typeof ctx.args.command === "string" ? ctx.args.command : "";
+    const commandTokens = command.match(/(?:"[^"]*"|'[^']*'|\S+)/g) ?? [];
+    const options = commandTokens.slice(1).map((token) => token.replace(/^['"]|['"]$/g, ""));
+    const hasTargetedOutputOption = options.some((option) => {
+      if (/^--(?:files-with-matches|files-without-match|count|count-matches|files|json)(?:=|$)/.test(option)) return true;
+      if (/^--(?:context|after-context|before-context)(?:=|$)/.test(option)) return true;
+      return /^-[^-]/.test(option) && /[lcABC]/.test(option.slice(1));
+    });
+    if (hasTargetedOutputOption) return raw;
+
+    // OpenCode's shell result may be only a preview of the command output. It
+    // must not be summarized as if that partial output were a complete search.
+    if (raw.includes("...output truncated...")) return raw;
+
     const minInputBytes = intOption(ctx.config, "min_input_bytes", 200, {
       min: 0,
     });
@@ -40,17 +54,18 @@ export const rgCompressor: Compressor = {
       min: 1,
       max: 500,
     });
-    const maxMatchesPerFile = intOption(ctx.config, "max_matches_per_file", 3, {
+    const maxMatchesPerFile = intOption(ctx.config, "max_matches_per_file", 5, {
       min: 1,
       max: 100,
     });
-    const maxLineChars = intOption(ctx.config, "max_line_chars", 100, {
+    const maxLineChars = intOption(ctx.config, "max_line_chars", 200, {
       min: 20,
       max: 1000,
     });
     if (!raw || raw.length < minInputBytes) return raw;
 
     const lines = raw.split("\n");
+    const nonEmptyLines = lines.filter((line) => line.trim() !== "" && line !== "--");
     // Detect format. Heuristic: if most lines start with `<path>:<num>:` it's
     // no-heading format; otherwise it's heading format.
     const noHeadingPattern = /^[^:\s][^:]*:\d+:/;
@@ -59,11 +74,13 @@ export const rgCompressor: Compressor = {
 
     type Match = { line: number; text: string };
     const byFile = new Map<string, Match[]>();
+    let parsedMatchLines = 0;
 
     if (isNoHeading) {
       for (const line of lines) {
         const m = line.match(/^([^:]+):(\d+):(.*)$/);
         if (!m) continue;
+        parsedMatchLines++;
         const path = m[1]!;
         const ln = Number.parseInt(m[2]!, 10);
         const arr = byFile.get(path) ?? [];
@@ -74,6 +91,9 @@ export const rgCompressor: Compressor = {
       // Heading format
       let currentFile: string | null = null;
       for (const line of lines) {
+        if (line === "--") {
+          continue;
+        }
         if (line === "") {
           currentFile = null;
           continue;
@@ -81,12 +101,15 @@ export const rgCompressor: Compressor = {
         // A path line: doesn't start with digits-colon
         if (!/^\d+[-:]/.test(line) && !line.startsWith(" ")) {
           currentFile = line.trim();
-          if (currentFile) byFile.set(currentFile, []);
+          if (currentFile) {
+            byFile.set(currentFile, []);
+          }
           continue;
         }
         // Match line: `LINE:text` or `LINE-text` (-context)
         const m = line.match(/^(\d+)[-:](.*)$/);
         if (m && currentFile) {
+          parsedMatchLines++;
           const arr = byFile.get(currentFile) ?? [];
           arr.push({ line: Number.parseInt(m[1]!, 10), text: m[2]! });
           byFile.set(currentFile, arr);
@@ -97,6 +120,8 @@ export const rgCompressor: Compressor = {
     if (byFile.size === 0) return raw;
 
     const totalMatches = [...byFile.values()].reduce((a, b) => a + b.length, 0);
+    if (totalMatches === 0 || nonEmptyLines.length === 0) return raw;
+    if (parsedMatchLines / nonEmptyLines.length < 0.8) return raw;
     const files = [...byFile.entries()].sort(
       (a, b) => b[1].length - a[1].length,
     );

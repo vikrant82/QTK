@@ -3,7 +3,11 @@
 > Phase-by-phase plan. Each phase is independently shippable — earlier
 > phases must work alone before later ones become useful.
 
-**Status snapshot (2026-05-26):**
+**Historical status snapshot (2026-05-26; not current project status):**
+
+The table and dated checklists below preserve the plan's state at that time;
+do not treat them as current release, parity, or live-integration certification.
+Current implementation references are the scoped architecture and package docs.
 
 | Phase | Description                                                          | Status        |
 | ----- | -------------------------------------------------------------------- | ------------- |
@@ -65,7 +69,7 @@ Working `qtk-plugin` that:
 - [x] `packages/qtk-plugin/test/compressors.test.ts` — 61 compressor tests
 - [x] `scripts/install-into-opencode.ts` — symlink + jsonc edit + smoke test
 - [x] `scripts/benchmark.ts` — measure compression ratios and p50/p90/p99 latency
-- [x] `qtk gain` CLI — prints session totals plus by-compressor/tool/source/result-shape summaries
+- [x] `qtk gain` CLI — prints session totals, by-compressor/tool/source/result-shape summaries, and recall counts/rates
 
 ### Acceptance criteria — met
 
@@ -163,7 +167,7 @@ JS regex.
 
 ---
 
-## Public release — GitHub + qalarc.com + blog (🟡 in flight)
+## Public release — GitHub + qalarc.com + blog (historical plan snapshot)
 
 Before any code-level Phase 4 work, surface the project publicly.
 

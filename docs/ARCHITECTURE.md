@@ -5,7 +5,11 @@
 
 ---
 
-## 1. Where QTK lives in opencode's tool-call lifecycle
+## 1. OpenCode V1 tool-call lifecycle
+
+QTK currently targets OpenCode V1 only. It is the single installed OpenCode
+plugin; RTK, when available, is an external helper binary invoked by QTK, not a
+second OpenCode plugin. Compatibility with forks is not claimed.
 
 Model-executed registered tools in current opencode (`Bash`, `Read`, `Grep`,
 `Glob`, `Task`, and MCP tools) flow through the tool resolver in
@@ -34,8 +38,9 @@ toModelOutput(result) {
 ```
 
 `Plugin.trigger` walks the registered plugins in order and calls each hook
-function with the **mutable** `result` object. QTK registers a
-`tool.execute.after` hook and rewrites compressible text in place.
+function with the **mutable** `result` object. QTK rewrites eligible Bash
+commands in `tool.execute.before` (RTK first, then QTK quiet fallback), and
+rewrites compressible tool text in `tool.execute.after`.
 
 For normal opencode tools, that text lives at `result.output`. For MCP tools,
 the hook sees raw `content` items before opencode flattens them into
@@ -65,9 +70,8 @@ qtk-plugin/
                          entry = { outputHash, ts, compressedOutput }
                          TTL = 60s default
 
-    tee.ts             ← writes raw output to .opencode/qtk-tee/<id>.log
-                         (only on failure or when compression > threshold)
-                         strict 0o600 perms
+    tee.ts             ← writes recoverable output under project tee directory
+                         (content follows redaction config); mode 0o600
 
     stats.ts           ← SQLite logger
                          schema = (ts, sessionID, tool, command_head,
@@ -84,13 +88,14 @@ qtk-plugin/
       package-manager.ts npm / pnpm / bun / yarn install/list noise
       cargo.ts           cargo build/test/clippy
       pytest.ts          pytest summaries
-      generic-text.ts    last-resort lossy fallback for MCP/task text shapes
+      generic-text.ts    lossless-by-default fallback; lossy summaries are opt-in
 
     tools/             ← compressors for built-in opencode tools
       read.ts            Read tool → outline if too long
       grep.ts            Grep tool → group by file
       glob.ts            Glob tool → cluster by directory
 
+    rtk.ts             ← external RTK helper resolution/rewrite
     dsl/               ← project-local TOML filters
     sidecar/           ← optional qtk-core client and async wrappers
     cli/               ← qtk gain analytics
@@ -108,8 +113,9 @@ qtk-plugin/
 │                                                                         │
 │ 2. session/tools.ts wraps the bash tool's execute()                     │
 │    ↓                                                                    │
-│    fires Plugin.trigger("tool.execute.before") → RTK plugin             │
-│    (if RTK is installed, it MAY rewrite to "rtk git status")            │
+│    fires Plugin.trigger("tool.execute.before") → QTK plugin              │
+│    QTK invokes external RTK helper first when it resolves; suggestions    │
+│    are accepted by default (allow=["*"], deny=[])                         │
 │    ↓                                                                    │
 │ 3. bash tool runs the command, captures stdout+stderr to result.output  │
 │    (1.8 KB of porcelain text)                                           │
@@ -118,12 +124,9 @@ qtk-plugin/
 │    ↓                                                                    │
 │ 5. QTK hook (this is the QTK logic):                                    │
 │                                                                         │
-│    a. Compute fingerprint sha256(tool + args.command)                   │
-│    b. Lookup in session cache                                           │
-│         IF found AND outputHash matches AND ts within TTL:              │
-│            result.output = "<qtk-unchanged since=14:23>"                │
-│            stats.log("dedup_hit", ...)                                  │
-│            return                                                       │
+│    a. Extract/normalize result text; handle tee recall pass-through      │
+│    b. Compute fingerprint and lookup output-equality session cache      │
+│       (cache hit reuses result without recompression)                    │
 │                                                                         │
 │    c. Pick compressor:                                                  │
 │         registry.lookup(tool, args.command)                             │
@@ -132,17 +135,19 @@ qtk-plugin/
 │    d. compressor.compress(result.output) → compressed string            │
 │         If compressor throws → log + leave output unchanged             │
 │                                                                         │
-│    e. If compressed/original ratio < 0.5:                               │
-│         tee.write(callID, result.output)                                │
+│    e. Build complete model-facing envelope; require estimated token      │
+│       savings >= configured ratio (default 10%) or pass raw through      │
 │         result.output = `<qtk-compressed orig_lines=X ratio=Y           │
-│                           tee=qtk-tee/<callID>.log>                     │
+│                           tee=qtk-tee/<callID>.log>`                    │
 │                          ${compressed}                                  │
 │                          </qtk-compressed>`                             │
+│         tee.write(callID, result.output) unless lossless=true            │
 │                                                                         │
-│    f. stats.log(...)                                                    │
-│    g. cache.put(fingerprint, outputHash, compressed)                    │
+│    f. Record every after-hook call in global SQLite calls table;         │
+│       retain compression/cache details separately                        │
+│    g. Cache accepted result; call record also includes pass-through       │
 │                                                                         │
-│ 6. opencode result conversion → LLM context                             │
+│ 6. OpenCode V1 result conversion → LLM context                          │
 │    (250 bytes of compact text + 1.8 KB invisible on disk)               │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -269,7 +274,12 @@ during the session — disk is cheap, surprises mid-session are not.
 
 ## 7. Stats / telemetry — strictly local
 
-`.opencode/qtk-stats.sqlite` schema:
+Stats use `${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite` globally by
+default. Absolute `QTK_STATS_PATH` overrides `[qtk.stats] path`; relative TOML
+paths resolve inside the project. Retention defaults to 90 days; zero keeps
+rows forever. `qtk gain` is tokens-first; USD is opt-in and RTK totals have a
+separate scope. Recall counts (tee references, bypass reruns, RTK recall
+signals) are attribution proxies, not proof of causality.
 
 ```sql
 CREATE TABLE IF NOT EXISTS compressions (
@@ -286,15 +296,34 @@ CREATE TABLE IF NOT EXISTS compressions (
   was_cache_hit            INTEGER NOT NULL,
   tee_file                 TEXT,           -- relative path or NULL
   agent_read_tee           INTEGER NOT NULL DEFAULT 0,
+  agent_bypass_rerun       INTEGER NOT NULL DEFAULT 0,
   duration_ms              INTEGER NOT NULL,
   result_shape             TEXT NOT NULL DEFAULT 'output',
   compressor_source        TEXT NOT NULL DEFAULT 'builtin',
   is_lossy                 INTEGER NOT NULL DEFAULT 0,
-  is_generic               INTEGER NOT NULL DEFAULT 0
+  is_generic               INTEGER NOT NULL DEFAULT 0,
+  project                  TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_session ON compressions(session_id);
 CREATE INDEX IF NOT EXISTS idx_tool ON compressions(tool);
 CREATE INDEX IF NOT EXISTS idx_ts ON compressions(ts);
+
+CREATE TABLE IF NOT EXISTS calls (
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  project TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  command_head TEXT,
+  outcome TEXT NOT NULL,
+  reason TEXT,
+  bytes_in INTEGER NOT NULL,
+  bytes_out INTEGER NOT NULL,
+  tokens_in_est INTEGER NOT NULL,
+  tokens_out_est INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS calls_ts ON calls(ts);
+CREATE INDEX IF NOT EXISTS calls_project_ts ON calls(project, ts);
 ```
 
 We use `bun:sqlite` — comes with Bun, zero deps.
@@ -364,7 +393,7 @@ min_input_bytes = 200         # global compression threshold
 enabled = true                # safe Bash quiet rewrites
 
 [qtk.redaction]
-enabled = true                # model-facing redaction; tee files still redact
+enabled = true                # controls redaction of model-facing output and tee files
 
 [qtk.sidecar]
 enabled = true                # optional qtk-core parsers
@@ -381,7 +410,8 @@ prune_days = 7                # delete tee files older than this at session star
 
 [qtk.stats]
 enabled = true
-database = ".opencode/qtk-stats.sqlite"
+path = ".opencode/qtk-stats.sqlite" # optional project-local override
+retention_days = 90
 
 [qtk.filters]
 bundled = true                # packaged RTK-compatible filters
@@ -393,7 +423,9 @@ enabled = true                # set false to disable built-in compressor
 max_files_per_section = 15
 
 [qtk.compressors.generic_text]
-enabled = true                # lossy MCP/task fallback
+enabled = true                # lossless JSON compaction by default for MCP/task fallback
+json_compact_min_saved_bytes = 256
+allow_lossy = false           # opt in to JSON/diagnostic/path/markdown/repeated-line summaries
 disabled_shapes = []          # json | diagnostics | path_list | markdown | repeated_lines
 
 # Per-tool overrides
@@ -408,6 +440,26 @@ enabled = true
 enabled = true
 ```
 
+By default, `generic-text` compacts only valid JSON objects/arrays, removing
+whitespace outside string literals while preserving values, number formatting,
+and key order. It compresses only when savings meet the configured minimum;
+other output passes through unchanged. These lossless results are marked
+`lossless=true` and have no tee. With `allow_lossy = true`, the previous
+summaries are enabled, marked `lossy=true`, and require a tee; without one, the
+output passes through unchanged.
+
+When calls are available, `qtk gain` reports a tokens-first funnel; USD is
+opt-in and RTK totals are separately scoped. Legacy compression-only databases
+instead produce `legacy_compressions` JSON and omit the funnel; no calls
+denominator or reason groups are inferred. `--db PATH` is read-only.
+
+Recall is measured when a later tool call reads a QTK tee file, or when Bash
+reruns a command compressed in the same session within 15 minutes with
+`QTK_DISABLED=1`. Tee reads pass through uncompressed, with redaction applied
+when `[qtk.redaction] enabled` is true. `qtk gain` reports per-group
+`recalls`/`recall%` when available. These are attribution proxies, not proof
+of causal recovery.
+
 All keys are optional; QTK ships with sensible defaults that work for the
 typical opencode user. `docs/examples/qtk.toml` lists the full currently
 honored config surface.
@@ -416,7 +468,32 @@ honored config surface.
 
 ## 10. Compatibility with RTK
 
-If both RTK and QTK are installed, the flow is:
+When RTK is installed, QTK runs `rtk rewrite` first and honors its suggestions
+by default (`allow = ["*"]`, `deny = []`). Prefix deny rules keep selected
+families with QTK; matching is token-wise and per shell segment. Equal segment
+counts allow segment-wise selection, while count mismatches use all-or-nothing
+policy. Agent-entered denied `rtk <proxy>` segments normalize to the raw command
+before RTK runs; RTK-native subcommands such as `read`, `recall`, `proxy`, and
+`gain` are never stripped. RTK's own safety checks decline redirects, pipes
+into programs, and `--json` requests.
+
+RTK recall activity is counted for Bash `rtk recall` / `rtk proxy`,
+`RTK_DISABLED=1` calls, and tools whose args reference RTK's tee directory
+(macOS `~/Library/Application Support/rtk/tee`, Linux `${XDG_DATA_HOME:-~/.local/share}/rtk/tee`).
+Stats record this as `calls.outcome='recall'` and `reason='rtk'` for aggregation
+into a separately scoped RTK report in `qtk gain`. These signals show
+recall-related activity, not proof a particular output caused a later read or
+rerun.
+
+Canonical passthrough reasons distinguish deliberate retention from gaps:
+`kept_exact` means the default-lossless `generic-text` compressor left the
+answer unchanged; `small` includes Read outputs below its byte/line thresholds.
+`fail_open` is reserved for compressor parse/decline failures and unchanged or
+larger compressor output; `no_compressor`, `not_worth_it`, `no_tee`, `excluded`,
+and `error` identify their corresponding pipeline exits.
+
+The following is an illustrative RTK flow, not parity certification or live
+integration evidence:
 
 1. `tool.execute.before` fires → RTK rewrites `git status` → `rtk git status`
 2. Bash tool runs `rtk git status` — RTK's native git filter compresses

@@ -26,6 +26,7 @@ import { CompressorRegistry } from "../src/registry.ts";
 import type { Compressor } from "../src/types.ts";
 
 const CTX = { args: {}, cwd: "/tmp", config: {} };
+const LOSSY_GENERIC_CTX = { ...CTX, config: { allow_lossy: true } };
 
 // Helper: assert that the compressor matches a given (tool, args) and
 // actually reduces output size.
@@ -414,7 +415,7 @@ describe("generic-text compressor", () => {
     for (let i = 0; i < 25; i++) paths.push(`packages/ui/src/comp-${i}.tsx`);
 
     const input = paths.join("\n");
-    const out = genericTextCompressor.compress(input, CTX);
+    const out = genericTextCompressor.compress(input, LOSSY_GENERIC_CTX);
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("60 paths in 2 directories");
   });
@@ -437,7 +438,7 @@ describe("generic-text compressor", () => {
     }
 
     const input = lines.join("\n");
-    const out = genericTextCompressor.compress(input, CTX);
+    const out = genericTextCompressor.compress(input, LOSSY_GENERIC_CTX);
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("20 diagnostics across 2 files");
   });
@@ -452,7 +453,7 @@ describe("generic-text compressor", () => {
       metadata: { total: 80, page: 1, source: "test" },
     });
 
-    const out = genericTextCompressor.compress(input, CTX);
+    const out = genericTextCompressor.compress(input, LOSSY_GENERIC_CTX);
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("json summary:");
     expect(out).toContain("$.items: array(80)");
@@ -467,7 +468,7 @@ describe("generic-text compressor", () => {
       sections.push(`- bullet ${i}B with details`);
     }
     const input = sections.join("\n");
-    const out = genericTextCompressor.compress(input, CTX);
+    const out = genericTextCompressor.compress(input, LOSSY_GENERIC_CTX);
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("text outline:");
     expect(out).toContain("lead:");
@@ -489,7 +490,7 @@ describe("generic-text compressor", () => {
     const input = sections.join("\n");
     const out = genericTextCompressor.compress(input, {
       ...CTX,
-      config: { markdown_line_refs: false },
+      config: { allow_lossy: true, markdown_line_refs: false },
     });
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("## Section 0");
@@ -507,7 +508,7 @@ describe("generic-text compressor", () => {
     lines.push("ERROR repeated timeout from worker");
     lines.push("ERROR failed to connect to database at src/db.ts:42");
     const input = lines.join("\n");
-    const out = genericTextCompressor.compress(input, CTX);
+    const out = genericTextCompressor.compress(input, LOSSY_GENERIC_CTX);
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("repeated after normalization");
     expect(out.match(/ERROR repeated timeout/g)?.length).toBe(1);
@@ -516,6 +517,83 @@ describe("generic-text compressor", () => {
 
   test("passes through ambiguous prose below threshold", () => {
     const input = "hello world\n".repeat(20);
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("compacts JSON without losing late items or pagination metadata by default", () => {
+    const items = Array.from({ length: 20 }, (_, id) => ({
+      id,
+      state: id === 19 ? "FAILED" : "OK",
+      message: id === 19 ? "critical late failure" : `item ${id}`,
+    }));
+    const input = JSON.stringify({ items, nextPageToken: "tok_page_2_abc" }, null, 2);
+    const output = genericTextCompressor.compress(input, CTX);
+
+    expect(output.length).toBeLessThan(input.length);
+    expect(JSON.parse(output)).toEqual(JSON.parse(input));
+    expect(output).toContain("critical late failure");
+    expect(output).toContain("tok_page_2_abc");
+  });
+
+  test("preserves JSON string whitespace, escapes, and number literal spellings", () => {
+    const input = `{
+  "doubleSpace": "a  b",
+  "escapedNewline": "x\\n  y",
+  "tab": "left\\tright",
+  "escapedQuote": "say \\"hi\\"",
+  "backslash": "left\\\\right",
+  "big": 12345678901234567890,
+  "decimal": 1.0,
+  "padding": [
+${Array.from({ length: 30 }, (_, i) => `    { "id": ${i}, "value": "padding ${i}" }`).join(",\n")}
+  ]
+}`;
+    const output = genericTextCompressor.compress(input, CTX);
+
+    expect(output).toContain('"doubleSpace":"a  b"');
+    expect(output).toContain('"escapedNewline":"x\\n  y"');
+    expect(output).toContain('"tab":"left\\tright"');
+    expect(output).toContain('"escapedQuote":"say \\"hi\\""');
+    expect(output).toContain('"backslash":"left\\\\right"');
+    expect(output).toContain("12345678901234567890");
+    expect(output).toContain("1.0");
+  });
+
+  test("passes through already-minified JSON", () => {
+    const input = JSON.stringify({ items: Array.from({ length: 60 }, (_, id) => ({ id, value: `item-${id}` })) });
+    expect(input.length).toBeGreaterThan(500);
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("passes through markdown containing a fenced JSON block", () => {
+    const input = `${Array.from({ length: 80 }, (_, i) => `Report line ${i} with details.`).join("\n")}\n\n\`\`\`json\n{\n  "items": []\n}\n\`\`\``;
+    expect(input.split("\n").length).toBeGreaterThanOrEqual(80);
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("passes through text diagnostics by default", () => {
+    const input = Array.from(
+      { length: 12 },
+      (_, i) => `src/a.ts:${12 + i}:5 - error TS2322: incompatible type ${i}`,
+    ).join("\n");
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("passes through path lists by default", () => {
+    const input = Array.from({ length: 30 }, (_, i) => `src/path-${i}.ts`).join("\n");
+    expect(genericTextCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("honors disabled JSON shape in lossless mode", () => {
+    const input = JSON.stringify({ items: Array.from({ length: 20 }, (_, id) => ({ id })) }, null, 2);
+    expect(genericTextCompressor.compress(input, {
+      ...CTX,
+      config: { disabled_shapes: ["json"] },
+    })).toBe(input);
+  });
+
+  test("passes through JSON below the minimum whitespace savings", () => {
+    const input = JSON.stringify({ value: "x".repeat(230) }, null, 2);
     expect(genericTextCompressor.compress(input, CTX)).toBe(input);
   });
 });
@@ -572,6 +650,67 @@ describe("rg compressor", () => {
     expect(out).toContain("src/file-0.ts (4 matches)");
     expect(out).toContain("... +3 more");
     expect(out).toContain("... and 2 more files");
+  });
+
+  test("fails open for OpenCode-truncated bash rg output", () => {
+    // Sanitized replay shape: OpenCode prepends the truncation notice and saved
+    // output hint to a preview that may end between rg file headings.
+    const input = `...output truncated...\n\nFull output saved to: /tmp/tool-output.txt\n\nsrc/first.ts\nsrc/second.ts`;
+    expect(rgCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("fails open when no-heading output has zero parsed matches", () => {
+    const input = `${"metadata line\n".repeat(8)}not a ripgrep result`;
+    expect(rgCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test("fails open when fewer than 80% of non-empty lines parse as matches", () => {
+    const input = [
+      ...Array.from(
+        { length: 4 },
+        (_, i) => `src/file-${i}.ts:${i + 1}:valid match`,
+      ),
+      "unrecognized command output",
+      "another unrecognized line",
+    ].join("\n");
+    expect(rgCompressor.compress(input, CTX)).toBe(input);
+  });
+
+  test.each([
+    "rg -l needle src/",
+    "rg --files-with-matches needle src/",
+    "rg --files-without-match needle src/",
+    "rg -c needle src/",
+    "rg --count needle src/",
+    "rg --count-matches needle src/",
+    "rg --files src/",
+    "rg --json needle src/",
+    "rg -A3 needle src/",
+    "rg -B 3 needle src/",
+    "rg -C3 needle src/",
+    "rg --context 3 needle src/",
+    "rg --after-context=3 needle src/",
+    "rg --before-context 3 needle src/",
+  ])("passes through already targeted rg output (%s)", (command) => {
+    const input = Array.from(
+      { length: 8 },
+      (_, i) => `src/file-${i}.ts:${i + 1}:matching output line ${i}`,
+    ).join("\n");
+    expect(
+      rgCompressor.compress(input, { ...CTX, args: { command } }),
+    ).toBe(input);
+  });
+
+  test("defaults to five matches per file and 200 line characters", () => {
+    const lines = Array.from(
+      { length: 7 },
+      (_, i) => `src/long.ts:${i + 1}:${"x".repeat(220)}${i}`,
+    );
+    const out = rgCompressor.compress(lines.join("\n"), CTX);
+    expect(out).toContain("src/long.ts (7 matches)");
+    expect(out.match(/^  L\d+:/gm)).toHaveLength(5);
+    expect(out).toContain(`${"x".repeat(200)}…`);
+    expect(out).toContain("... +2 more");
   });
 });
 
@@ -765,6 +904,72 @@ describe("Grep tool compressor", () => {
     const out = grepToolCompressor.compress(input, CTX);
     expect(out.length).toBeLessThan(input.length);
     expect(out).toContain("matches across");
+  });
+
+  test("preserves OpenCode grep result-limit note verbatim", () => {
+    const note = "(Results truncated. Consider using a more specific path or pattern.)";
+    const input = [
+      "Found 12 matches (more matches available)",
+      "src/file.ts:",
+      ...Array.from(
+        { length: 30 },
+        (_, i) => `  Line ${i + 1}: ${"matching content ".repeat(4)}${i}`,
+      ),
+      "",
+      note,
+    ].join("\n");
+    const out = grepToolCompressor.compress(input, {
+      ...CTX,
+      config: { min_input_bytes: 0 },
+    });
+    expect(out).not.toBe(input);
+    expect(out.endsWith(note)).toBe(true);
+  });
+
+  test("fails open instead of summarizing zero parsed matches", () => {
+    const input = `Found many results\n${"unstructured detail line\n".repeat(30)}`;
+    expect(
+      grepToolCompressor.compress(input, {
+        ...CTX,
+        config: { min_input_bytes: 0, min_matches: 1 },
+      }),
+    ).toBe(input);
+  });
+
+  test("uses a 20-match minimum by default", () => {
+    const input = [
+      "Found 12 matches",
+      "src/file.ts:",
+      ...Array.from(
+        { length: 12 },
+        (_, i) => `  Line ${i + 1}: ${"x".repeat(220)}${i}`,
+      ),
+    ].join("\n");
+    expect(
+      grepToolCompressor.compress(input, {
+        ...CTX,
+        config: { min_input_bytes: 0 },
+      }),
+    ).toBe(input);
+  });
+
+  test("defaults to five matches per file and 200 line characters", () => {
+    const input = [
+      "Found 20 matches",
+      "src/file.ts:",
+      ...Array.from(
+        { length: 20 },
+        (_, i) => `  Line ${i + 1}: ${"x".repeat(220)}${i}`,
+      ),
+    ].join("\n");
+    const out = grepToolCompressor.compress(input, {
+      ...CTX,
+      config: { min_input_bytes: 0 },
+    });
+    expect(out).toContain("src/file.ts (20)");
+    expect(out.match(/^  L\d+:/gm)).toHaveLength(5);
+    expect(out).toContain(`${"x".repeat(200)}…`);
+    expect(out).toContain("... +15 more");
   });
 });
 

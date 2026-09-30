@@ -10,16 +10,29 @@ dedup_ttl_seconds = 60      # session cache TTL for identical outputs
 
 [qtk.compression]
 min_input_bytes = 200       # below this, only redaction/cache pass-through runs
+min_savings_ratio = 0.10    # require this token saving after adding QTK's envelope
 
 [qtk.rewrite]
 enabled = true              # safe Bash quiet rewrites before execution
 
+[qtk.rtk]
+enabled = true               # auto-active only when RTK resolves
+binary = "rtk"               # PATH name or absolute executable path
+rewrite_timeout_ms = 1000    # 50–10000 ms
+allow = ["*"]                # honor RTK rewrites by default
+deny = []                    # token prefixes QTK keeps; deny takes precedence
+# Example: deny = ["rg", "git diff"]
+# Decisions are per shell segment. Denied agent-typed rtk proxies normalize to
+# raw commands; RTK-native commands remain. RTK declines redirects, pipes into
+# programs, and `--json` itself.
+
 [qtk.redaction]
-enabled = true              # model-facing redaction; tee files still redact on write
+enabled = true              # controls redaction of model-facing output and tee files
 
 [qtk.sidecar]
 enabled = true              # optional qtk-core Rust parsers if binary is installed
-path = "/Users/chauv/vibe-tools/QTK/packages/qtk-core/target/release/qtk-core"
+# Local developer override example (uncomment and replace with your own path):
+# path = "/path/to/QTK/packages/qtk-core/target/release/qtk-core"
 request_timeout_ms = 1000
 startup_timeout_ms = 1500
 max_restarts = 3
@@ -45,7 +58,10 @@ prune_days = 7
 
 [qtk.stats]
 enabled = true
-database = ".opencode/qtk-stats.sqlite"
+# Defaults to ${XDG_DATA_HOME:-$HOME/.local/share}/qtk/stats.sqlite.
+# QTK_STATS_PATH (absolute) overrides this; relative paths stay in project root.
+# path = ".opencode/qtk-stats.sqlite"
+retention_days = 90             # 0 keeps rows forever
 
 [qtk.filters]
 bundled = true              # load packaged RTK-compatible filters
@@ -151,8 +167,8 @@ max_names_per_group = 8
 enabled = true
 min_input_bytes = 200
 max_files_shown = 15
-max_matches_per_file = 3
-max_line_chars = 100
+max_matches_per_file = 5
+max_line_chars = 200
 
 [qtk.compressors.package_manager]
 enabled = true
@@ -177,7 +193,9 @@ max_error_block_lines = 8
 max_test_failures = 20
 
 [qtk.compressors.generic_text]
-enabled = true                    # lossy MCP/task fallback; disable if too aggressive
+enabled = true                    # lossless JSON compaction by default for MCP/task fallback
+json_compact_min_saved_bytes = 256
+allow_lossy = false               # opt in to summaries; those require a tee
 min_input_bytes = 500
 max_input_bytes = 500000
 disabled_shapes = [               # disable generic-text sub-shapes if too aggressive
@@ -222,10 +240,10 @@ tail_lines = 20
 [qtk.tools.grep]
 enabled = true
 min_input_bytes = 500
-min_matches = 10
+min_matches = 20
 max_files_shown = 15
-max_matches_per_file = 3
-max_line_chars = 100
+max_matches_per_file = 5
+max_line_chars = 200
 
 [qtk.tools.glob]
 enabled = true

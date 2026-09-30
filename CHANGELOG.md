@@ -9,11 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Stats now use a shared global SQLite database by default, with project attribution, configurable retention, and a per-after-hook `calls` table.
+
+- Global SQLite stats database by default, per-project attribution, retention pruning, and a `calls` table logging processed tool outcomes.
+
+- RTK-first hybrid rewrite policy honors suggestions by default, with QTK `deny` prefixes, per-segment routing, agent-typed RTK proxy normalization, RTK recall measurement, and RTK's safety declines for redirects, program pipes, and `--json`.
+- Final-text never-worse guard: compressed output is passed through unless the complete model-facing envelope meets the configured minimum token savings (default 10%).
+- Grep/rg fail-open behavior and loosened default caps: five matches per file, 200-character lines, and 20 minimum matches for built-in Grep.
+- Hybrid QTK↔RTK Bash coordination: RTK rewrites commands first; QTK Bash compressors remain the fallback, while QTK continues handling native tools and MCP.
 - Built-in `find` / `fd` compressor that clusters one-path-per-line results by containing directory.
 - Built-in `package-manager` compressor for `npm`, `npx`, `pnpm`, `pnpx`, `bun`, `bunx`, and `yarn` output noise.
 - Packaged RTK-compatible TOML filters now load by default, with project-local filters taking precedence.
 - Result-text normalizer for MCP text content arrays/resources, allowing compressors to rewrite MCP text outputs before opencode flattens them.
-- `generic-text` fallback compressor for recognizable MCP/task text shapes: path lists, diagnostics, JSON schema summaries, markdown outlines, and repeated/log-like lines. Generic output is marked `lossy=true` and requires a raw tee file.
+- `generic-text` fallback now compacts eligible JSON objects/arrays losslessly by default (minimum 256 saved bytes); previous summaries are opt-in with `allow_lossy = true` and require a tee.
+- Recall measurement for tee reads and `QTK_DISABLED=1` Bash bypass reruns; `qtk gain` now reports per-group recall counts/rates and a summary.
 - Expanded analytics metadata for successful compressions: result shape, compressor source, generic/lossy flags, `qtk gain` breakdowns by tool/source/result shape, and JSON savings export groups.
 - Conservative `tool.execute.before` command rewrites for Bash: `pytest -q`, `cargo --quiet`, `npm`/`pnpm install --silent`, and aggressive Gradle `--quiet --console=plain`, with verbosity flags and `QTK_REWRITE_DISABLED=1` escape hatch.
 - `qtk-runtime` opencode skill advising agents how to recover exact output from QTK tee files or exact reruns.
@@ -83,7 +92,7 @@ Infrastructure:
 
 - Session-dedup cache (SHA-256 fingerprint + output hash)
 - Tee fallback to `.opencode/qtk-tee/` (mode 0o600, dir 0o700)
-- SQLite stats tracker (`.opencode/qtk-stats.sqlite`)
+- SQLite stats tracker (global `~/.local/share/qtk/stats.sqlite` by default)
 - Circuit breaker (auto-disables a compressor after 3 failures)
 - `qtk gain` CLI for session analytics
 
